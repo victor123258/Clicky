@@ -26,3 +26,15 @@ contextBridge.exposeInMainWorld("heyclickyGraphics", {
 contextBridge.exposeInMainWorld("heyclickySetup", {
   saveApiConfig: (config) => ipcRenderer.invoke("config:save", config)
 });
+
+contextBridge.exposeInMainWorld("heyclickyControls", {
+  requestVoice: () => ipcRenderer.send("assistant:voice"),
+  clearVisual: () => ipcRenderer.send("assistant:clear"),
+  quit: () => ipcRenderer.send("assistant:quit"),
+  onStatus(callback) {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, value) => callback(value);
+    ipcRenderer.on("assistant:status", listener);
+    return () => ipcRenderer.removeListener("assistant:status", listener);
+  }
+});

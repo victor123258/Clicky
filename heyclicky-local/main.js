@@ -7,7 +7,9 @@ const path = require("node:path");
 const fs = require("node:fs");
 
 let overlay;
+let controlsWindow;
 let setupWindow;
+let lastStatus = { message: "Starting", kind: "busy" };
 let backend;
 let quitting = false;
 let backendStarted = false;
@@ -71,8 +73,50 @@ function createOverlay() {
   overlay.on("closed", () => { overlay = null; });
 }
 
+function createControls() {
+  const display = screen.getPrimaryDisplay();
+  const width = 470;
+  controlsWindow = new BrowserWindow({
+    x: display.bounds.x + Math.round((display.bounds.width - width) / 2),
+    y: display.workArea.y + 12,
+    width,
+    height: 68,
+    transparent: true,
+    frame: false,
+    hasShadow: false,
+    alwaysOnTop: true,
+    resizable: false,
+    movable: true,
+    skipTaskbar: true,
+    show: false,
+    backgroundColor: "#00000000",
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true
+    }
+  });
+  controlsWindow.setAlwaysOnTop(true, "screen-saver");
+  controlsWindow.loadFile(path.join(__dirname, "controls.html"));
+  controlsWindow.once("ready-to-show", () => {
+    controlsWindow.show();
+    controlsWindow.webContents.send("assistant:status", lastStatus);
+  });
+  controlsWindow.on("closed", () => { controlsWindow = null; });
+}
+
+function setAssistantStatus(message, kind = "ready") {
+  lastStatus = { message: String(message || "Ready").slice(0, 60), kind };
+  if (controlsWindow && !controlsWindow.isDestroyed()) {
+    controlsWindow.webContents.send("assistant:status", lastStatus);
+  }
+}
+
 function showSetup() {
   overlay?.hide();
+  setAssistantStatus("Set up API key", "warning");
   if (setupWindow && !setupWindow.isDestroyed()) {
     setupWindow.focus();
     return;
@@ -107,6 +151,7 @@ function sendBackendMessage(value) {
 
 function confirmAction(message) {
   if (!backend || !backend.stdin.writable) return;
+  setAssistantStatus("Confirm action", "warning");
   const isClick = message.action === "click";
   const detail = isClick
     ? `Click at screen position (${message.x}, ${message.y})?`
@@ -158,10 +203,23 @@ function startBackend() {
     } else if (message.type === "failsafe" || message.type === "shutdown") {
       app.quit();
     } else if (message.type === "status") {
-      console.log(`[HeyClicky] ${String(message.message || "").slice(0, 400)}`);
+      const text = String(message.message || "Ready").slice(0, 400);
+      console.log(`[HeyClicky] ${text}`);
+      const lower = text.toLowerCase();
+      const shortStatus = lower.includes("listening") ? "Listening…"
+        : lower.includes("thinking") || lower.includes("requesting") ? "Thinking…"
+        : lower.includes("recognized") ? "Thinking…"
+        : lower.includes("confirm") ? "Confirm action"
+        : lower.includes("cancel") ? "Cancelled"
+        : lower.includes("clicked") || lower.includes("typed") ? "Done"
+        : lower.includes("ready") ? "Ready"
+        : text;
+      setAssistantStatus(shortStatus, lower.includes("listening") || lower.includes("thinking") ? "busy" : "ready");
     } else if (message.type === "error") {
-      console.error(`[HeyClicky] ${String(message.message || "Unknown error").slice(0, 500)}`);
-      if (/No API key found/i.test(String(message.message || ""))) showSetup();
+      const text = String(message.message || "Unknown error").slice(0, 500);
+      console.error(`[HeyClicky] ${text}`);
+      setAssistantStatus(text, "warning");
+      if (/No API key found/i.test(text)) showSetup();
     }
   });
   backend.stderr.setEncoding("utf8");
@@ -177,6 +235,23 @@ function startBackend() {
     if (!quitting && code !== 0) console.error(`Assistant backend exited (code=${code}, signal=${signal}).`);
   });
 }
+
+ipcMain.on("assistant:voice", () => {
+  if (!hasConfiguredKey()) {
+    showSetup();
+    return;
+  }
+  if (!backendStarted) startBackend();
+  setAssistantStatus("Listening…", "busy");
+  sendBackendMessage({ type: "voice_request" });
+});
+
+ipcMain.on("assistant:clear", () => {
+  if (backendStarted) sendBackendMessage({ type: "clear_visual" });
+  else overlay?.webContents.send("graphics:clear");
+});
+
+ipcMain.on("assistant:quit", () => app.quit());
 
 ipcMain.handle("config:save", async (event, config) => {
   if (!setupWindow || event.sender.id !== setupWindow.webContents.id || !config || typeof config !== "object") {
@@ -199,12 +274,15 @@ ipcMain.handle("config:save", async (event, config) => {
   try { fs.chmodSync(file, 0o600); } catch (_) { /* Windows uses user profile ACLs. */ }
   setupWindow.close();
   if (overlay && !overlay.isDestroyed()) overlay.showInactive();
+  if (controlsWindow && !controlsWindow.isDestroyed()) controlsWindow.show();
+  setAssistantStatus("Starting engine…", "busy");
   startBackend();
   return { ok: true };
 });
 
 app.whenReady().then(() => {
   createOverlay();
+  createControls();
   if (hasConfiguredKey()) startBackend();
   else showSetup();
   app.on("activate", () => {
