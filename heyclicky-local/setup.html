@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'; connect-src 'none'">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>HeyClicky Setup</title>
+  <link rel="stylesheet" href="setup.css">
+  <script src="setup-renderer.js" defer></script>
+</head>
+<body>
+  <main class="card">
+    <div class="brand"><span>✳</span> HEYCLICKY <small>FIRST-RUN SETUP</small></div>
+    <h1>Connect a vision model</h1>
+    <p class="intro">Choose a provider and paste its API key. Your key is stored in your local app data and is never sent to this app's graphics overlay.</p>
+    <div class="provider-tabs" role="tablist">
+      <button type="button" class="tab active" data-provider="gemini">Google Gemini</button>
+      <button type="button" class="tab" data-provider="openrouter">OpenRouter</button>
+    </div>
+    <form id="setup-form">
+      <label id="key-label" for="api-key">Gemini API key</label>
+      <div class="key-row"><input id="api-key" type="password" autocomplete="off" spellcheck="false" required placeholder="Paste API key"/><button id="toggle-key" type="button">Show</button></div>
+      <p class="key-help" id="key-help">Get a key at aistudio.google.com. Gemini is selected by default when both providers are configured.</p>
+      <button class="save" type="submit" id="save-button">Save key &amp; launch HeyClicky <span>→</span></button>
+      <p class="error" id="error" role="alert"></p>
+    </form>
+    <div class="privacy"><b>Privacy note</b><br>Voice recognition uses Google's online SpeechRecognition service. Screenshots and prompts are sent to the selected vision provider. Review their free-tier terms; access and quotas can change.</div>
+  </main>
+</body>
+</html>
