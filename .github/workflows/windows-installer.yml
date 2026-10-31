@@ -5,6 +5,7 @@ on:
   pull_request:
     branches: [main]
   push:
+    branches: [main]
     tags:
       - 'v*'
 
@@ -47,3 +48,13 @@ jobs:
         with:
           files: heyclicky-local/release/*.exe
           generate_release_notes: true
+      - name: Publish downloadable main-branch build
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: main-build-${{ github.run_number }}
+          name: HeyClicky Windows Installer — main build ${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          prerelease: true
+          make_latest: false
+          files: heyclicky-local/release/*.exe
