@@ -1,19 +1,14 @@
 "use strict";
 
 const { contextBridge, ipcRenderer } = require("electron");
-const fs = require("node:fs");
-const path = require("node:path");
-let threeModuleBase64 = "";
-try {
-  const packageEntry = require.resolve("three");
-  const moduleFile = path.join(path.dirname(packageEntry), "three.module.js");
-  threeModuleBase64 = fs.readFileSync(moduleFile).toString("base64");
-} catch (error) {
-  console.error("Could not load bundled Three.js module:", error.message);
-}
 
 contextBridge.exposeInMainWorld("heyclickyGraphics", {
-  getThreeModuleBase64: () => threeModuleBase64,
+  onThreeModule(callback) {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, moduleBase64) => callback(moduleBase64);
+    ipcRenderer.on("graphics:three-module", listener);
+    return () => ipcRenderer.removeListener("graphics:three-module", listener);
+  },
   onRender(callback) {
     if (typeof callback !== "function") return () => {};
     const listener = (_event, html) => callback(html);

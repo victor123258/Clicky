@@ -1,6 +1,6 @@
 {
   "name": "heyclicky-native",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Native Electron desktop assistant with a sandboxed graphics overlay",
   "main": "main.js",
