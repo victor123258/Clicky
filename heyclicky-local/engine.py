@@ -146,7 +146,9 @@ def select_provider() -> tuple[str, str, str]:
     if preference == "openrouter" or (not preference and openrouter_key):
         if not openrouter_key:
             raise RuntimeError("OPENROUTER_API_KEY is not configured")
-        return "openrouter", openrouter_key, os.getenv("OPENROUTER_MODEL", OPENROUTER_MODEL)
+        # Keep the app on OpenRouter's explicitly free model even if a stale
+        # environment variable requests a paid model.
+        return "openrouter", openrouter_key, OPENROUTER_MODEL
     raise RuntimeError("No API key found. Set GEMINI_API_KEY or OPENROUTER_API_KEY in heyclicky-local/.env")
 
 
