@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'; connect-src 'none'">
+  <!-- Generated scripts run only in the separately protected opaque-origin graphics protocol frame. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src data: blob:; frame-src clicky-graphics:; object-src 'none'; base-uri 'none'; form-action 'none'; connect-src 'none'">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>HeyClicky Graphics Overlay</title>
   <link rel="stylesheet" href="overlay.css">

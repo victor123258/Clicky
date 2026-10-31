@@ -32,6 +32,21 @@ sys.modules[spec.name] = engine
 spec.loader.exec_module(engine)
 
 
+class GraphicsPromptTests(unittest.TestCase):
+    def test_3d_guidance_requires_real_high_quality_transparent_three_scene(self):
+        prompt = engine.SYSTEM_PROMPT
+        self.assertIn("genuine Three.js scene", prompt)
+        self.assertIn("window.THREE", prompt)
+        self.assertIn("readable silhouette", prompt)
+        self.assertIn("55–75% of the viewport", prompt)
+        self.assertIn("soft key/fill/rim lighting", prompt)
+        self.assertIn("WebGLRenderer({ alpha: true, antialias: true })", prompt)
+        self.assertIn("render a visible first frame", prompt)
+        self.assertIn("transparent", prompt)
+        self.assertIn("cap pixel ratio at 2", prompt)
+        self.assertIn("do not add imports, CDNs, external assets, or network requests", prompt)
+
+
 class VoiceCaptureTests(unittest.TestCase):
     def _speech_module(self, microphone, recognizer):
         module = types.ModuleType("speech_recognition")
@@ -47,12 +62,18 @@ class VoiceCaptureTests(unittest.TestCase):
             def __enter__(self): return self
             def __exit__(self, *args): return False
 
+        events = []
         class Recognizer:
             pause_threshold = 0
             non_speaking_duration = 0
             operation_timeout = 0
-            def adjust_for_ambient_noise(self, _microphone, duration): self.calibration = duration
-            def listen(self, _microphone, **kwargs): self.listen_args = kwargs; return "audio-bytes"
+            def adjust_for_ambient_noise(self, _microphone, duration):
+                self.calibration = duration
+                events.append("calibrated")
+            def listen(self, _microphone, **kwargs):
+                events.append("listen")
+                self.listen_args = kwargs
+                return "audio-bytes"
             def recognize_google(self, audio, language):
                 self.recognition_args = (audio, language)
                 return "  what is this window?  "
@@ -61,10 +82,15 @@ class VoiceCaptureTests(unittest.TestCase):
         fake_sr = self._speech_module(Mic(), recognizer)
         fake_tts = types.ModuleType("pyttsx3")
         fake_tts.init = lambda: (_ for _ in ()).throw(RuntimeError("SAPI driver unavailable"))
+        def record_status(message):
+            if message.get("type") == "status" and "Listening" in message.get("message", ""):
+                events.append("ready")
+
         with patch.dict(sys.modules, {"speech_recognition": fake_sr, "pyttsx3": fake_tts}), \
              patch.dict(engine.os.environ, {"HEYCLICKY_SPEECH_LANGUAGE": "bn-BD"}), \
-             patch.object(engine, "emit"):
+             patch.object(engine, "emit", side_effect=record_status):
             self.assertEqual(engine.transcribe_once(), "what is this window?")
+        self.assertEqual(events, ["calibrated", "ready", "listen"])
         self.assertEqual(recognizer.listen_args["timeout"], 10)
         self.assertEqual(recognizer.listen_args["phrase_time_limit"], 15)
         self.assertEqual(recognizer.recognition_args, ("audio-bytes", "bn-BD"))
@@ -113,12 +139,42 @@ class VoiceCaptureTests(unittest.TestCase):
         self.assertEqual([event["type"] for event in events], ["capture_request", "capture_done"])
         self.assertEqual(events[0]["id"], events[1]["id"])
 
+    def test_global_hotkey_checks_provider_before_microphone_or_screenshot(self):
+        with patch.object(engine, "select_provider", side_effect=RuntimeError("No API key found")), \
+             patch.object(engine, "transcribe_once") as transcribe, \
+             patch.object(engine, "emit") as emit:
+            engine._handle_hotkey()
+        transcribe.assert_not_called()
+        emit.assert_called_once_with({"type": "error", "message": "No API key found"})
+
+    def test_rejected_text_request_has_a_separate_ui_event(self):
+        with engine._REQUEST_LOCK, patch.object(engine, "emit") as emit:
+            engine.on_text_request("please help")
+        emit.assert_called_once()
+        event = emit.call_args.args[0]
+        self.assertEqual(event["type"], "request_rejected")
+        self.assertEqual(event["source"], "text")
+
     def test_reply_action_is_validated_and_preserved(self):
         action = engine.parse_action('{"action":"reply","text":"A concise explanation."}', (800, 600))
         self.assertEqual(action.name, "reply")
         self.assertEqual(action.text, "A concise explanation.")
         with self.assertRaisesRegex(ValueError, "Reply must contain"):
             engine.parse_action('{"action":"reply","text":""}', (800, 600))
+
+    def test_visual_reply_does_not_claim_success_before_rendering(self):
+        events = []
+        fake_screen = types.SimpleNamespace(FAILSAFE=True)
+        action = engine.Action("render_visual", html_payload="<svg></svg>")
+        with patch.object(engine, "pyautogui", fake_screen), \
+             patch.object(engine, "capture_screen_without_clicky", return_value="screenshot"), \
+             patch.object(engine, "plan_action", return_value=action), \
+             patch.object(engine, "emit", side_effect=events.append):
+            engine.process_request("make a 3D object")
+        reply = next(message["text"] for message in events if message["type"] == "assistant_reply")
+        self.assertIn("sent the visual", reply)
+        self.assertIn("alert you if the scene fails to render", reply)
+        self.assertNotIn("It’s running", reply)
 
 
 if __name__ == "__main__":

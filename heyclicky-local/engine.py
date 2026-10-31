@@ -35,7 +35,9 @@ SYSTEM_PROMPT = '''You are a cautious desktop assistant. Inspect the screenshot 
 {"action":"reply","text":"A concise, helpful answer grounded in the screenshot and request."}
 {"action":"none"}
 Coordinates are integer pixels within the screenshot. Click/type actions require explicit user confirmation. Use reply for questions or explanations; use none only when no useful response is safe. Never request secrets, passwords, payment details, destructive actions, or security changes.
-For a graphic, return a self-contained HTML or SVG fragment. If using Three.js, use the trusted global THREE supplied by the isolated overlay and put code in a module script; do not import external URLs. The visual runs in an opaque-origin sandboxed iframe without network access, Electron privileges, or access to the parent page. Avoid huge loops or excessive resources. Never include credentials or attempt to access the host outside the graphics sandbox.'''
+For a graphic, return a self-contained HTML or SVG fragment. Choose SVG for flat diagrams and icons; when the user asks for 3D, make a genuine Three.js scene rather than a 2D drawing or CSS perspective trick. Use only the trusted global `window.THREE` supplied by the isolated overlay (inside one `<script type="module">`); do not add imports, CDNs, external assets, or network requests. The visual runs in a transparent, opaque-origin sandboxed iframe with no network access, Electron privileges, or access to the parent page.
+
+For 3D quality, build a recognizable subject from real Three.js geometry and layered details, with a deliberate composition, readable silhouette, perspective camera framed so the subject is fully visible and fills roughly 55–75% of the viewport, coherent materials/colors, soft key/fill/rim lighting, and depth cues. Use smooth shading where appropriate and subtle animation that preserves the subject's readability. Make the first frame visible immediately. Instantiate `new window.THREE.WebGLRenderer({ alpha: true, antialias: true })`, append its canvas, set a fully transparent clear color, and render a visible first frame before starting any animation. Keep the background transparent so the desktop remains visible; cap pixel ratio at 2 and update renderer size and camera aspect on resize. Prefer built-in geometry and procedural details over external textures. Keep triangle counts and animation work modest, reuse objects in the animation loop, and avoid excessive lights, shadows, loops, or allocations. Keep the fragment compact and valid; do not wrap it in `<html>` or `<body>` tags. Never include credentials or attempt to access the host outside the graphics sandbox.'''
 
 
 @dataclass(frozen=True)
@@ -281,8 +283,8 @@ def process_request(command: str) -> None:
         emit({"type": "status", "message": "Graphics overlay cleared."})
     elif action.name == "render_visual":
         emit({"type": "render_visual", "html_payload": action.html_payload})
-        emit({"type": "assistant_reply", "text": "Here’s the visual. It’s running in the isolated graphics overlay."})
-        emit({"type": "status", "message": "Isolated graphics payload sent to Electron overlay."})
+        emit({"type": "assistant_reply", "text": "I sent the visual to the transparent graphics overlay. I’ll alert you if the scene fails to render."})
+        emit({"type": "status", "message": "Graphics payload sent to isolated Electron frame."})
     elif not wait_for_approval(action):
         emit({"type": "assistant_reply", "text": "No changes made — the desktop action was cancelled."})
         emit({"type": "status", "message": "Desktop action cancelled."})
@@ -333,11 +335,11 @@ def transcribe_once() -> str:
     recognizer.non_speaking_duration = 0.45
     recognizer.operation_timeout = 25
     announce_listening()
-    emit({"type": "status", "message": "Listening — speak now."})
     try:
         with sr.Microphone() as microphone:
-            log("Microphone opened; listening for one phrase.")
+            log("Microphone opened; calibrating ambient audio.")
             recognizer.adjust_for_ambient_noise(microphone, duration=0.25)
+            emit({"type": "status", "message": "Listening — speak now."})
             audio = recognizer.listen(microphone, timeout=10, phrase_time_limit=15)
     except sr.WaitTimeoutError as exc:
         raise RuntimeError("No speech heard. Check the selected microphone, then speak after ‘Listening’ appears.") from exc
@@ -361,6 +363,10 @@ def transcribe_once() -> str:
 
 def _handle_hotkey() -> None:
     try:
+        # The global shortcut is still registered during first-run setup so the
+        # local microphone test works, but a real request must never capture a
+        # screenshot unless an AI provider is configured.
+        select_provider()
         transcript = transcribe_once()
         log(f"Recognized request: {transcript}")
         emit({"type": "transcript", "text": transcript})
@@ -378,7 +384,7 @@ _REQUEST_LOCK = threading.Lock()
 
 def on_hotkey() -> None:
     if not _REQUEST_LOCK.acquire(blocking=False):
-        emit({"type": "status", "message": "A request is already being processed."})
+        emit({"type": "busy_notice", "message": "Clicky is already working on a request."})
         return
     try:
         _handle_hotkey()
@@ -388,7 +394,7 @@ def on_hotkey() -> None:
 
 def on_text_request(text: str) -> None:
     if not _REQUEST_LOCK.acquire(blocking=False):
-        emit({"type": "status", "message": "A request is already being processed."})
+        emit({"type": "request_rejected", "source": "text", "message": "Clicky is already working on another request. Your message was not sent; please retry when it is ready."})
         return
     try:
         emit({"type": "status", "message": "Thinking with your screen in context…"})

@@ -7,6 +7,7 @@
   "scripts": {
     "start": "electron .",
     "dist:win": "electron-builder --win nsis --x64",
+    "smoke:graphics": "electron scripts/graphics-smoke.cjs",
     "build:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1"
   },
   "dependencies": {
@@ -22,6 +23,9 @@
     "asar": true,
     "files": [
       "main.js",
+      "three-module.cjs",
+      "graphics-protocol.cjs",
+      "graphics-frame.html",
       "preload.js",
       "renderer.js",
       "overlay.html",

@@ -20,6 +20,10 @@ contextBridge.exposeInMainWorld("heyclickyGraphics", {
     const listener = () => callback();
     ipcRenderer.on("graphics:clear", listener);
     return () => ipcRenderer.removeListener("graphics:clear", listener);
+  },
+  reportRenderError(message) {
+    const safeMessage = typeof message === "string" ? message.slice(0, 300) : "Unknown graphics error";
+    ipcRenderer.send("graphics:render-error", safeMessage);
   }
 });
 
@@ -75,5 +79,17 @@ contextBridge.exposeInMainWorld("heyclickyControls", {
     const listener = (_event, value) => callback(value);
     ipcRenderer.on("assistant:mic-test-result", listener);
     return () => ipcRenderer.removeListener("assistant:mic-test-result", listener);
+  },
+  onRequestRejected(callback) {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, value) => callback(value);
+    ipcRenderer.on("assistant:request-rejected", listener);
+    return () => ipcRenderer.removeListener("assistant:request-rejected", listener);
+  },
+  onBusyNotice(callback) {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, value) => callback(value);
+    ipcRenderer.on("assistant:busy-notice", listener);
+    return () => ipcRenderer.removeListener("assistant:busy-notice", listener);
   }
 });

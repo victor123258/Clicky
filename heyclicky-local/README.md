@@ -26,7 +26,7 @@ npm ci
 npm run build:win
 ```
 
-The installer appears in `release/`. `npm start` runs the development app from source instead. The bundled engine uses PyInstaller and runtime dependencies from `requirements.txt`.
+The installer appears in `release/`. `npm start` runs the development app from source instead. The bundled engine uses PyInstaller and runtime dependencies from `requirements.txt`. Run `npm run smoke:graphics` to render and read back a real WebGL pixel from the sandboxed Three.js frame in Electron, using SwiftShader so no physical GPU or API key is needed; Windows CI runs this before packaging.
 
 ## Privacy and security
 

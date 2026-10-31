@@ -2,27 +2,36 @@
 
 const root = document.getElementById("graphics-root");
 let activeFrame = null;
+let activePayload = null;
 let threeBase64 = "";
 let libraryReady = false;
 let waitingPayload = null;
+let frameReadyTimer = null;
 const MAX_PAYLOAD_CHARS = 150_000;
-const SANDBOX_CSP = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline' data:; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src 'none'; connect-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'\">";
+
+function reportRenderError(message) {
+  const safeMessage = String(message || "Unknown graphics error").replace(/\s+/g, " ").slice(0, 300);
+  console.error("Graphics frame error:", safeMessage);
+  window.heyclickyGraphics.reportRenderError(safeMessage);
+}
 
 function renderNow(payload) {
-  if (typeof payload !== "string" || payload.length === 0 || payload.length > MAX_PAYLOAD_CHARS) return;
-  // Provider markup executes only in an opaque-origin iframe with scripts allowed for
-  // graphics. It has no same-origin access, network, Electron bridge, forms, or top nav.
-  const threeBootstrap = threeBase64
-    ? `<script type="module">import * as THREE from "data:text/javascript;base64,${threeBase64}";window.THREE=THREE;window.dispatchEvent(new Event("heyclicky-three-ready"));</script>`
-    : "";
+  if (typeof payload !== "string" || payload.length === 0 || payload.length > MAX_PAYLOAD_CHARS) {
+    reportRenderError("The visual payload was empty or too large.");
+    return;
+  }
+  clearTimeout(frameReadyTimer);
   const frame = document.createElement("iframe");
   frame.setAttribute("sandbox", "allow-scripts");
   frame.setAttribute("title", "Isolated assistant graphics");
   frame.setAttribute("referrerpolicy", "no-referrer");
-  frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8">${SANDBOX_CSP}<meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}</style></head><body>${threeBootstrap}${payload}</body></html>`;
-  if (activeFrame) activeFrame.remove();
   activeFrame = frame;
+  activePayload = payload;
   root.replaceChildren(frame);
+  frameReadyTimer = setTimeout(() => {
+    if (activeFrame === frame) reportRenderError("The isolated graphics frame did not start.");
+  }, 10000);
+  frame.src = "clicky-graphics://frame/";
 }
 
 function renderIsolated(payload) {
@@ -34,11 +43,29 @@ function renderIsolated(payload) {
 }
 
 function clearGraphics() {
+  clearTimeout(frameReadyTimer);
   waitingPayload = null;
+  activePayload = null;
   if (activeFrame) activeFrame.remove();
   activeFrame = null;
   root.replaceChildren();
 }
+
+window.addEventListener("message", (event) => {
+  if (!activeFrame || event.source !== activeFrame.contentWindow) return;
+  const data = event.data;
+  if (data?.type === "heyclicky-frame-ready") {
+    clearTimeout(frameReadyTimer);
+    if (typeof activePayload !== "string") return;
+    activeFrame.contentWindow.postMessage({
+      type: "heyclicky-render",
+      payload: activePayload,
+      threeBase64
+    }, "*");
+  } else if (data?.type === "heyclicky-visual-error") {
+    reportRenderError(data.message);
+  }
+});
 
 window.heyclickyGraphics.onThreeModule((moduleBase64) => {
   threeBase64 = typeof moduleBase64 === "string" ? moduleBase64 : "";
