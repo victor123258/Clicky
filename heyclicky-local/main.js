@@ -23,9 +23,7 @@ let setupOverlayEnabled = null;
 let voiceLanguage = "en-US";
 const SPEECH_LANGUAGES = new Set(["en-US", "en-GB", "bn-BD", "hi-IN", "ur-PK", "es-MX", "fr-FR", "de-DE"]);
 try {
-  const threeEntry = require.resolve("three");
-  const moduleFile = path.join(path.dirname(threeEntry), "three.module.js");
-  threeModuleBase64 = fs.readFileSync(moduleFile).toString("base64");
+  threeModuleBase64 = require("./three-module.cjs")();
 } catch (error) {
   console.error("Bundled Three.js module unavailable:", error.message);
 }

@@ -23,6 +23,7 @@
     "asar": true,
     "files": [
       "main.js",
+      "three-module.cjs",
       "preload.js",
       "renderer.js",
       "overlay.html",

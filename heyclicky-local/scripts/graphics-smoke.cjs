@@ -3,14 +3,12 @@
 // End-to-end check the actual overlay's srcdoc + inherited-CSP + Three.js
 // bootstrap path without requiring an API key, model call, or WebGL device.
 const { app, BrowserWindow } = require("electron");
-const fs = require("node:fs");
 const path = require("node:path");
+const loadThreeModuleBase64 = require("../three-module.cjs");
 
 async function main() {
   await app.whenReady();
-  const threeEntry = require.resolve("three");
-  const threeModule = path.join(path.dirname(threeEntry), "three.module.js");
-  const threeBase64 = fs.readFileSync(threeModule).toString("base64");
+  const threeBase64 = loadThreeModuleBase64();
   const window = new BrowserWindow({
     width: 320,
     height: 240,
