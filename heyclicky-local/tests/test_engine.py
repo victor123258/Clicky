@@ -32,6 +32,21 @@ sys.modules[spec.name] = engine
 spec.loader.exec_module(engine)
 
 
+class GraphicsPromptTests(unittest.TestCase):
+    def test_3d_guidance_requires_real_high_quality_transparent_three_scene(self):
+        prompt = engine.SYSTEM_PROMPT
+        self.assertIn("genuine Three.js scene", prompt)
+        self.assertIn("window.THREE", prompt)
+        self.assertIn("readable silhouette", prompt)
+        self.assertIn("55–75% of the viewport", prompt)
+        self.assertIn("soft key/fill/rim lighting", prompt)
+        self.assertIn("WebGLRenderer({ alpha: true, antialias: true })", prompt)
+        self.assertIn("render a visible first frame", prompt)
+        self.assertIn("transparent", prompt)
+        self.assertIn("cap pixel ratio at 2", prompt)
+        self.assertIn("do not add imports, CDNs, external assets, or network requests", prompt)
+
+
 class VoiceCaptureTests(unittest.TestCase):
     def _speech_module(self, microphone, recognizer):
         module = types.ModuleType("speech_recognition")
