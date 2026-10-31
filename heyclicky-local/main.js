@@ -1,6 +1,6 @@
 "use strict";
 
-const { app, BrowserWindow, dialog, ipcMain, screen } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, screen, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const readline = require("node:readline");
 const path = require("node:path");
@@ -14,6 +14,12 @@ let backend;
 let quitting = false;
 let backendStarted = false;
 let threeModuleBase64 = "";
+let controlLayout = "collapsed";
+let collapseTimer;
+let captureRestore;
+let captureTimer;
+let voiceLanguage = "en-US";
+const SPEECH_LANGUAGES = new Set(["en-US", "en-GB", "bn-BD", "hi-IN", "ur-PK", "es-MX", "fr-FR", "de-DE"]);
 try {
   const threeEntry = require.resolve("three");
   const moduleFile = path.join(path.dirname(threeEntry), "three.module.js");
@@ -26,6 +32,17 @@ function userConfigPath() {
   return path.join(app.getPath("userData"), ".env");
 }
 
+function voiceSettingsPath() {
+  return path.join(app.getPath("userData"), "voice-settings.json");
+}
+
+function loadVoiceLanguage() {
+  try {
+    const settings = JSON.parse(fs.readFileSync(voiceSettingsPath(), "utf8"));
+    if (SPEECH_LANGUAGES.has(settings.language)) voiceLanguage = settings.language;
+  } catch (_) { /* First launch defaults to English (US). */ }
+}
+
 function keyExistsInEnvFile(file) {
   try {
     const text = fs.readFileSync(file, "utf8");
@@ -36,6 +53,20 @@ function keyExistsInEnvFile(file) {
 function hasConfiguredKey() {
   return Boolean(process.env.GEMINI_API_KEY || process.env.OPENROUTER_API_KEY) ||
     keyExistsInEnvFile(userConfigPath()) || keyExistsInEnvFile(path.join(__dirname, ".env"));
+}
+
+function providerStatus() {
+  if (!hasConfiguredKey()) return "No AI provider key connected yet.";
+  let provider = process.env.AI_PROVIDER || "";
+  for (const file of [userConfigPath(), path.join(__dirname, ".env")]) {
+    try {
+      const text = fs.readFileSync(file, "utf8");
+      const match = text.match(/^\s*AI_PROVIDER\s*=\s*(gemini|openrouter)\s*$/mi);
+      if (match) { provider = match[1]; break; }
+    } catch (_) { /* Try the next configuration source. */ }
+  }
+  if (!provider) provider = process.env.OPENROUTER_API_KEY && !process.env.GEMINI_API_KEY ? "openrouter" : "gemini";
+  return `${provider === "openrouter" ? "OpenRouter" : "Google Gemini"} key saved for this Windows user.`;
 }
 
 function createOverlay() {
@@ -73,20 +104,46 @@ function createOverlay() {
   overlay.on("closed", () => { overlay = null; });
 }
 
-function createControls() {
+function controlBounds(mode = controlLayout) {
   const display = screen.getPrimaryDisplay();
-  const width = 558;
+  const area = display.workArea;
+  const sizes = {
+    collapsed: { width: 286, height: 46 },
+    peek: { width: 440, height: 196 },
+    expanded: { width: Math.min(720, area.width), height: Math.min(730, area.height) }
+  };
+  const size = sizes[mode] || sizes.collapsed;
+  return {
+    x: area.x + Math.round((area.width - size.width) / 2),
+    y: area.y,
+    width: size.width,
+    height: size.height
+  };
+}
+
+function setControlLayout(mode, focus = false) {
+  if (!["collapsed", "peek", "expanded"].includes(mode) || !controlsWindow || controlsWindow.isDestroyed()) return;
+  clearTimeout(collapseTimer);
+  controlLayout = mode;
+  controlsWindow.setBounds(controlBounds(mode));
+  controlsWindow.setFocusable?.(mode === "expanded");
+  controlsWindow.webContents.send("assistant:layout-state", { mode });
+  controlsWindow.webContents.send("assistant:status", lastStatus);
+  if (!controlsWindow.isVisible()) controlsWindow.showInactive();
+  if (focus && mode === "expanded") controlsWindow.focus();
+}
+
+function createControls() {
+  const bounds = controlBounds("collapsed");
   controlsWindow = new BrowserWindow({
-    x: display.bounds.x + Math.round((display.bounds.width - width) / 2),
-    y: display.workArea.y + 12,
-    width,
-    height: 86,
+    ...bounds,
     transparent: true,
     frame: false,
     hasShadow: false,
     alwaysOnTop: true,
     resizable: false,
-    movable: true,
+    movable: false,
+    focusable: false,
     skipTaskbar: true,
     show: false,
     backgroundColor: "#00000000",
@@ -101,16 +158,29 @@ function createControls() {
   controlsWindow.setAlwaysOnTop(true, "screen-saver");
   controlsWindow.loadFile(path.join(__dirname, "controls.html"));
   controlsWindow.once("ready-to-show", () => {
-    controlsWindow.show();
+    controlsWindow.showInactive();
     controlsWindow.webContents.send("assistant:status", lastStatus);
+    controlsWindow.webContents.send("assistant:layout-state", { mode: controlLayout });
+  });
+  controlsWindow.on("mouseenter", () => {
+    if (controlLayout === "collapsed") setControlLayout("peek");
+  });
+  controlsWindow.on("mouseleave", () => {
+    if (controlLayout === "peek") {
+      clearTimeout(collapseTimer);
+      collapseTimer = setTimeout(() => {
+        if (controlLayout === "peek") setControlLayout("collapsed");
+      }, 800);
+    }
   });
   controlsWindow.on("closed", () => { controlsWindow = null; });
 }
 
 function setAssistantStatus(message, kind = "ready") {
-  lastStatus = { message: String(message || "Ready").slice(0, 60), kind };
+  lastStatus = { message: String(message || "Ready").slice(0, 500), kind };
   if (controlsWindow && !controlsWindow.isDestroyed()) {
     controlsWindow.webContents.send("assistant:status", lastStatus);
+    if (kind === "warning" && controlLayout === "collapsed") setControlLayout("peek");
   }
 }
 
@@ -123,9 +193,9 @@ function showSetup() {
   }
   setupWindow = new BrowserWindow({
     width: 510,
-    height: 650,
+    height: 740,
     minWidth: 470,
-    minHeight: 600,
+    minHeight: 680,
     title: "HeyClicky — First-time setup",
     resizable: false,
     backgroundColor: "#0b1020",
@@ -172,6 +242,29 @@ function confirmAction(message) {
     });
 }
 
+function restoreAfterCapture() {
+  clearTimeout(captureTimer);
+  if (!captureRestore) return;
+  const previous = captureRestore;
+  captureRestore = null;
+  if (previous.overlay && overlay && !overlay.isDestroyed()) overlay.showInactive();
+  if (previous.controls && controlsWindow && !controlsWindow.isDestroyed()) {
+    setControlLayout(previous.mode, false);
+    controlsWindow.showInactive();
+  }
+}
+
+function restartBackend() {
+  if (backend && !backend.killed) {
+    const previous = backend;
+    previous.once("exit", () => { if (!quitting) startBackend(); });
+    previous.kill("SIGTERM");
+    return;
+  }
+  backendStarted = false;
+  startBackend();
+}
+
 function startBackend() {
   if (backendStarted) return;
   backendStarted = true;
@@ -183,7 +276,7 @@ function startBackend() {
   const args = packaged ? [] : ["-u", path.join(__dirname, "engine.py")];
   backend = spawn(command, args, {
     cwd: packaged ? configDir : __dirname,
-    env: { ...process.env, PYTHONUNBUFFERED: "1", HEYCLICKY_CONFIG_DIR: configDir },
+    env: { ...process.env, PYTHONUNBUFFERED: "1", HEYCLICKY_CONFIG_DIR: configDir, HEYCLICKY_SPEECH_LANGUAGE: voiceLanguage },
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true
   });
@@ -200,6 +293,26 @@ function startBackend() {
       overlay?.webContents.send("graphics:clear");
     } else if (message.type === "action_confirmation") {
       confirmAction(message);
+    } else if (message.type === "assistant_reply") {
+      if (controlsWindow && !controlsWindow.isDestroyed()) controlsWindow.webContents.send("assistant:reply", { text: String(message.text || "").slice(0, 6000) });
+    } else if (message.type === "transcript") {
+      if (controlsWindow && !controlsWindow.isDestroyed()) controlsWindow.webContents.send("assistant:transcript", { text: String(message.text || "").slice(0, 2000) });
+    } else if (message.type === "mic_test_result") {
+      const result = { ok: Boolean(message.ok), text: String(message.text || "").slice(0, 300), error: String(message.error || "").slice(0, 500) };
+      if (controlsWindow && !controlsWindow.isDestroyed()) controlsWindow.webContents.send("assistant:mic-test-result", result);
+      if (setupWindow && !setupWindow.isDestroyed()) setupWindow.webContents.send("assistant:setup-mic-result", result);
+    } else if (message.type === "capture_request") {
+      const captureId = String(message.id || "").slice(0, 100);
+      if (captureId && !captureRestore) {
+        captureRestore = { controls: Boolean(controlsWindow?.isVisible()), overlay: Boolean(overlay?.isVisible()), mode: controlLayout };
+        controlsWindow?.hide();
+        overlay?.hide();
+        clearTimeout(captureTimer);
+        captureTimer = setTimeout(() => restoreAfterCapture(), 12000);
+        setTimeout(() => sendBackendMessage({ type: "capture_ready", id: captureId }), 140);
+      }
+    } else if (message.type === "capture_done") {
+      restoreAfterCapture();
     } else if (message.type === "failsafe" || message.type === "shutdown") {
       app.quit();
     } else if (message.type === "status") {
@@ -236,22 +349,86 @@ function startBackend() {
   });
 }
 
-ipcMain.on("assistant:voice", () => {
+ipcMain.on("assistant:voice", (event) => {
+  if (!controlsWindow || event.sender.id !== controlsWindow.webContents.id) return;
   if (!hasConfiguredKey()) {
     showSetup();
     return;
   }
   if (!backendStarted) startBackend();
-  setAssistantStatus("Listening…", "busy");
+  setAssistantStatus("Opening microphone…", "busy");
   sendBackendMessage({ type: "voice_request" });
 });
 
-ipcMain.on("assistant:clear", () => {
+ipcMain.on("assistant:layout", (event, mode) => {
+  if (controlsWindow && event.sender.id === controlsWindow.webContents.id) setControlLayout(mode, mode === "expanded");
+});
+
+ipcMain.on("assistant:setup", (event) => {
+  if (controlsWindow && event.sender.id === controlsWindow.webContents.id) showSetup();
+});
+
+ipcMain.on("assistant:text", (event, value) => {
+  if (!controlsWindow || event.sender.id !== controlsWindow.webContents.id) return;
+  const text = typeof value === "string" ? value.trim().slice(0, 2000) : "";
+  if (!text) return;
+  if (!hasConfiguredKey()) { showSetup(); return; }
+  if (!backendStarted) startBackend();
+  setAssistantStatus("Thinking…", "busy");
+  sendBackendMessage({ type: "text_request", text });
+});
+
+ipcMain.on("assistant:mic-test", (event) => {
+  if (!controlsWindow || event.sender.id !== controlsWindow.webContents.id) return;
+  if (!backendStarted) startBackend();
+  setAssistantStatus("Microphone test…", "busy");
+  sendBackendMessage({ type: "mic_test" });
+});
+
+ipcMain.on("assistant:setup-mic-test", (event) => {
+  if (!setupWindow || event.sender.id !== setupWindow.webContents.id) return;
+  if (!backendStarted) startBackend();
+  sendBackendMessage({ type: "mic_test" });
+});
+
+ipcMain.on("assistant:mic-privacy", (event) => {
+  if (!controlsWindow || event.sender.id !== controlsWindow.webContents.id) return;
+  if (process.platform === "win32") shell.openExternal("ms-settings:privacy-microphone").catch((error) => console.error("Could not open Windows microphone settings:", error.message));
+  else setAssistantStatus("Open your system’s microphone privacy settings.", "warning");
+});
+
+ipcMain.handle("assistant:get-voice-language", (event) => {
+  if (!controlsWindow || event.sender.id !== controlsWindow.webContents.id) throw new Error("Invalid settings request");
+  return voiceLanguage;
+});
+
+ipcMain.handle("assistant:get-provider-status", (event) => {
+  if (!controlsWindow || event.sender.id !== controlsWindow.webContents.id) throw new Error("Invalid settings request");
+  return providerStatus();
+});
+
+ipcMain.handle("assistant:set-voice-language", async (event, value) => {
+  if (!controlsWindow || event.sender.id !== controlsWindow.webContents.id || !SPEECH_LANGUAGES.has(value)) throw new Error("Choose a supported speech language.");
+  if (lastStatus.kind === "busy") throw new Error("Wait for the current voice request to finish before changing speech language.");
+  voiceLanguage = value;
+  const file = voiceSettingsPath();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify({ language: voiceLanguage })}\n`, { encoding: "utf8", mode: 0o600 });
+  try { fs.chmodSync(file, 0o600); } catch (_) { /* Windows uses user profile ACLs. */ }
+  if (backendStarted) restartBackend();
+  setAssistantStatus(`Speech language set to ${voiceLanguage}.`, "ready");
+  return { ok: true, language: voiceLanguage };
+});
+
+ipcMain.on("assistant:clear", (event) => {
+  if (!controlsWindow || event.sender.id !== controlsWindow.webContents.id) return;
   if (backendStarted) sendBackendMessage({ type: "clear_visual" });
   else overlay?.webContents.send("graphics:clear");
 });
 
-ipcMain.on("assistant:quit", () => app.quit());
+ipcMain.on("assistant:quit", (event) => {
+  if (controlsWindow && event.sender.id === controlsWindow.webContents.id) app.quit();
+});
 
 ipcMain.handle("config:save", async (event, config) => {
   if (!setupWindow || event.sender.id !== setupWindow.webContents.id || !config || typeof config !== "object") {
@@ -276,15 +453,20 @@ ipcMain.handle("config:save", async (event, config) => {
   if (overlay && !overlay.isDestroyed()) overlay.showInactive();
   if (controlsWindow && !controlsWindow.isDestroyed()) controlsWindow.show();
   setAssistantStatus("Starting engine…", "busy");
-  startBackend();
+  restartBackend();
+  setAssistantStatus("Ready when you are", "ready");
   return { ok: true };
 });
 
 app.whenReady().then(() => {
+  loadVoiceLanguage();
   createOverlay();
   createControls();
-  if (hasConfiguredKey()) startBackend();
-  else showSetup();
+  screen.on("display-metrics-changed", () => {
+    if (controlsWindow && !controlsWindow.isDestroyed()) controlsWindow.setBounds(controlBounds(controlLayout));
+  });
+  startBackend();
+  if (!hasConfiguredKey()) showSetup();
   app.on("activate", () => {
     if (!overlay || overlay.isDestroyed()) createOverlay();
     if (!backendStarted && !hasConfiguredKey()) showSetup();
