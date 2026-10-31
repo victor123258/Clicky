@@ -1,0 +1,49 @@
+name: Build Windows installer
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: heyclicky-local/package-lock.json
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Node dependencies
+        working-directory: heyclicky-local
+        run: npm ci
+      - name: Build one-click Windows installer
+        working-directory: heyclicky-local
+        shell: pwsh
+        run: npm run build:win
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HeyClicky-Windows-Installer
+          path: heyclicky-local/release/*.exe
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish installer on version tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: heyclicky-local/release/*.exe
+          generate_release_notes: true

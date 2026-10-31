@@ -1,0 +1,54 @@
+{
+  "name": "heyclicky-native",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Native Electron desktop assistant with a sandboxed graphics overlay",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win nsis --x64",
+    "build:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1"
+  },
+  "dependencies": {
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "electron": "^45.2.1",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "ai.heycliky.desktop",
+    "productName": "HeyClicky",
+    "asar": true,
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer.js",
+      "overlay.html",
+      "overlay.css",
+      "setup.html",
+      "setup.css",
+      "setup-renderer.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/backend/heyclicky-engine.exe",
+        "to": "backend/heyclicky-engine.exe"
+      }
+    ],
+    "directories": { "output": "release" },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "artifactName": "HeyClicky-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true
+    }
+  }
+}
