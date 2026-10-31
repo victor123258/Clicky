@@ -162,6 +162,20 @@ class VoiceCaptureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Reply must contain"):
             engine.parse_action('{"action":"reply","text":""}', (800, 600))
 
+    def test_visual_reply_does_not_claim_success_before_rendering(self):
+        events = []
+        fake_screen = types.SimpleNamespace(FAILSAFE=True)
+        action = engine.Action("render_visual", html_payload="<svg></svg>")
+        with patch.object(engine, "pyautogui", fake_screen), \
+             patch.object(engine, "capture_screen_without_clicky", return_value="screenshot"), \
+             patch.object(engine, "plan_action", return_value=action), \
+             patch.object(engine, "emit", side_effect=events.append):
+            engine.process_request("make a 3D object")
+        reply = next(message["text"] for message in events if message["type"] == "assistant_reply")
+        self.assertIn("sent the visual", reply)
+        self.assertIn("alert you if the scene fails to render", reply)
+        self.assertNotIn("It’s running", reply)
+
 
 if __name__ == "__main__":
     unittest.main()

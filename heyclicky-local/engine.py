@@ -283,8 +283,8 @@ def process_request(command: str) -> None:
         emit({"type": "status", "message": "Graphics overlay cleared."})
     elif action.name == "render_visual":
         emit({"type": "render_visual", "html_payload": action.html_payload})
-        emit({"type": "assistant_reply", "text": "Here’s the visual. It’s running in the isolated graphics overlay."})
-        emit({"type": "status", "message": "Isolated graphics payload sent to Electron overlay."})
+        emit({"type": "assistant_reply", "text": "I sent the visual to the transparent graphics overlay. I’ll alert you if the scene fails to render."})
+        emit({"type": "status", "message": "Graphics payload sent to isolated Electron frame."})
     elif not wait_for_approval(action):
         emit({"type": "assistant_reply", "text": "No changes made — the desktop action was cancelled."})
         emit({"type": "status", "message": "Desktop action cancelled."})
