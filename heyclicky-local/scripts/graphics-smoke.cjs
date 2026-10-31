@@ -104,14 +104,14 @@ async function main() {
     if (!sandbox.includes("allow-scripts") || sandbox.includes("allow-same-origin")) {
       throw new Error(`Graphics frame sandbox was not opaque and script-only: ${sandbox}`);
     }
-    const pointerRouting = await window.webContents.executeJavaScript(`
-      const root = document.querySelector('#graphics-root');
-      const frame = root?.querySelector('iframe');
-      root.dataset.interactive = 'true';
-      const result = { root: getComputedStyle(root).pointerEvents, frame: getComputedStyle(frame).pointerEvents };
-      root.dataset.interactive = 'false';
-      result;
-    `);
+    const pointerRouting = await window.webContents.executeJavaScript(`(() => {
+      const graphicsRoot = document.querySelector('#graphics-root');
+      const graphicsFrame = graphicsRoot?.querySelector('iframe');
+      graphicsRoot.dataset.interactive = 'true';
+      const result = { root: getComputedStyle(graphicsRoot).pointerEvents, frame: getComputedStyle(graphicsFrame).pointerEvents };
+      graphicsRoot.dataset.interactive = 'false';
+      return result;
+    })()`);
     if (pointerRouting.root !== "auto" || pointerRouting.frame !== "auto") {
       throw new Error(`Interaction mode did not enable overlay pointer routing: ${JSON.stringify(pointerRouting)}`);
     }
