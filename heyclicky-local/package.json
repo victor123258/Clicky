@@ -1,6 +1,6 @@
 {
   "name": "heyclicky-native",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "description": "Native Electron desktop assistant with a sandboxed graphics overlay",
   "main": "main.js",
@@ -40,9 +40,18 @@
         "to": "backend/heyclicky-engine.exe"
       }
     ],
-    "directories": { "output": "release" },
+    "directories": {
+      "output": "release"
+    },
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "artifactName": "HeyClicky-Setup-${version}.${ext}"
     },
     "nsis": {

@@ -9,14 +9,39 @@
   <script src="controls-renderer.js" defer></script>
 </head>
 <body>
-  <main class="notch" aria-label="HeyClicky controls">
-    <div class="brand"><span class="spark">✳</span><div class="brand-copy"><b>CLICKY</b><small>DESKTOP AI</small></div></div>
-    <span class="separator"></span>
-    <button class="listen" id="listen" type="button" title="Start voice request"><span class="mic">●</span><span class="listen-label">Ask Clicky</span></button>
-    <span class="status" id="status" aria-live="polite"><i></i><span>Starting</span></span>
-    <span class="spacer"></span>
-    <button class="icon" id="clear" type="button" title="Clear graphics" aria-label="Clear graphics">⌫</button>
-    <button class="icon quit" id="quit" type="button" title="Quit HeyClicky" aria-label="Quit HeyClicky">×</button>
+  <main class="capsule" aria-label="HeyClicky desktop assistant controls">
+    <div class="identity drag-region">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 36 36" role="presentation"><path d="M18 4.5 21.2 13l8.3-3.2-3.2 8.3 8.5 3.2-8.5 3.2 3.2 8.3-8.3-3.2L18 36l-3.2-8.4-8.3 3.2 3.2-8.3-8.5-3.2 8.5-3.2-3.2-8.3 8.3 3.2z" transform="translate(0 -2) scale(1 .96)" fill="currentColor"/><circle cx="18" cy="17" r="4.2" fill="#10202a"/></svg>
+      </div>
+      <div class="identity-copy"><span class="product-name">HeyClicky</span><span class="product-caption">DESKTOP ASSISTANT</span></div>
+    </div>
+
+    <span class="divider" aria-hidden="true"></span>
+
+    <button class="speak-button" id="listen" type="button" title="Start a voice request · Ctrl+Shift+Space">
+      <span class="mic-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg>
+      </span>
+      <span class="speak-label">Speak to Clicky</span>
+      <span class="voice-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+    </button>
+
+    <div class="status-block" id="status" aria-live="polite" aria-atomic="true">
+      <span class="status-indicator"><i></i></span>
+      <span class="status-copy"><span class="status-label">Starting</span><span class="status-hint">Ctrl <kbd>Shift</kbd> <kbd>Space</kbd></span></span>
+    </div>
+
+    <span class="divider utility-divider" aria-hidden="true"></span>
+
+    <div class="utilities">
+      <button class="utility-button" id="clear" type="button" title="Clear graphics overlay" aria-label="Clear graphics overlay">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 7 1.2 13h5.6L16 7M5 7h14M10 7V4h4v3m-3 3v7m2-7v7"/></svg>
+      </button>
+      <button class="utility-button quit-button" id="quit" type="button" title="Quit HeyClicky" aria-label="Quit HeyClicky">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>
+      </button>
+    </div>
   </main>
 </body>
 </html>

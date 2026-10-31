@@ -75,12 +75,12 @@ function createOverlay() {
 
 function createControls() {
   const display = screen.getPrimaryDisplay();
-  const width = 470;
+  const width = 558;
   controlsWindow = new BrowserWindow({
     x: display.bounds.x + Math.round((display.bounds.width - width) / 2),
     y: display.workArea.y + 12,
     width,
-    height: 68,
+    height: 86,
     transparent: true,
     frame: false,
     hasShadow: false,
