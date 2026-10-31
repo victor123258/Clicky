@@ -20,6 +20,10 @@ contextBridge.exposeInMainWorld("heyclickyGraphics", {
     const listener = () => callback();
     ipcRenderer.on("graphics:clear", listener);
     return () => ipcRenderer.removeListener("graphics:clear", listener);
+  },
+  reportRenderError(message) {
+    const safeMessage = typeof message === "string" ? message.slice(0, 300) : "Unknown graphics error";
+    ipcRenderer.send("graphics:render-error", safeMessage);
   }
 });
 

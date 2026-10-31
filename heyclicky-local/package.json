@@ -24,6 +24,8 @@
     "files": [
       "main.js",
       "three-module.cjs",
+      "graphics-protocol.cjs",
+      "graphics-frame.html",
       "preload.js",
       "renderer.js",
       "overlay.html",

@@ -1,6 +1,8 @@
 "use strict";
 
-const { app, BrowserWindow, dialog, ipcMain, screen, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, protocol, screen, shell } = require("electron");
+const { registerGraphicsScheme, registerGraphicsProtocol } = require("./graphics-protocol.cjs");
+registerGraphicsScheme(protocol);
 const { spawn } = require("node:child_process");
 const readline = require("node:readline");
 const path = require("node:path");
@@ -363,6 +365,13 @@ function startBackend() {
   });
 }
 
+ipcMain.on("graphics:render-error", (event, value) => {
+  if (!overlay || overlay.isDestroyed() || event.sender.id !== overlay.webContents.id || event.senderFrame !== overlay.webContents.mainFrame) return;
+  const detail = typeof value === "string" ? value.replace(/[\r\n\0]+/g, " ").slice(0, 300) : "Unknown graphics error";
+  console.warn(`[HeyClicky] Graphics rendering failed: ${detail}`);
+  setAssistantStatus(`Visual failed to render: ${detail}. Try a simpler 3D request.`, "warning");
+});
+
 ipcMain.on("assistant:voice", (event) => {
   if (!controlsWindow || event.sender.id !== controlsWindow.webContents.id) return;
   if (!hasConfiguredKey()) {
@@ -474,6 +483,7 @@ ipcMain.handle("config:save", async (event, config) => {
 });
 
 app.whenReady().then(() => {
+  registerGraphicsProtocol(protocol);
   loadVoiceLanguage();
   createOverlay();
   createControls();
