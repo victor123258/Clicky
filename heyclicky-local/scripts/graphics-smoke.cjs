@@ -134,6 +134,7 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(error.stack || error);
+  const message = String(error.stack || error).replace(/\r?\n/g, " ");
+  console.error(`::error title=Graphics smoke failure::${message}`);
   app.exit(1);
 });
