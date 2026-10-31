@@ -11,6 +11,14 @@ let setupWindow;
 let backend;
 let quitting = false;
 let backendStarted = false;
+let threeModuleBase64 = "";
+try {
+  const threeEntry = require.resolve("three");
+  const moduleFile = path.join(path.dirname(threeEntry), "three.module.js");
+  threeModuleBase64 = fs.readFileSync(moduleFile).toString("base64");
+} catch (error) {
+  console.error("Bundled Three.js module unavailable:", error.message);
+}
 
 function userConfigPath() {
   return path.join(app.getPath("userData"), ".env");
@@ -56,6 +64,9 @@ function createOverlay() {
   overlay.setAlwaysOnTop(true, "screen-saver");
   overlay.setIgnoreMouseEvents(true, { forward: true });
   overlay.loadFile(path.join(__dirname, "overlay.html"));
+  overlay.webContents.on("did-finish-load", () => {
+    if (!overlay.isDestroyed()) overlay.webContents.send("graphics:three-module", threeModuleBase64);
+  });
   overlay.once("ready-to-show", () => overlay.showInactive());
   overlay.on("closed", () => { overlay = null; });
 }
