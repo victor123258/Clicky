@@ -24,7 +24,7 @@ else:
     pyautogui.FAILSAFE = True
 
 GEMINI_MODEL = "gemini-2.5-flash"
-OPENROUTER_MODEL = "google/gemini-2.5-flash:free"
+OPENROUTER_MODEL = "openrouter/free"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 MAX_VISUAL_CHARS = 150_000
 SYSTEM_PROMPT = '''You are a cautious desktop assistant. Inspect the screenshot and spoken request. Return exactly one JSON object, optionally inside a ```json code fence. Supported schemas:

@@ -42,7 +42,7 @@ class ProviderSelectionTests(unittest.TestCase):
         }, clear=True):
             self.assertEqual(
                 engine.select_provider(),
-                ("openrouter", "test-openrouter-key", "google/gemini-2.5-flash:free"),
+                ("openrouter", "test-openrouter-key", "openrouter/free"),
             )
 
 
