@@ -78,3 +78,6 @@ window.heyclickyGraphics.onThreeModule((moduleBase64) => {
 });
 window.heyclickyGraphics.onRender(renderIsolated);
 window.heyclickyGraphics.onClear(clearGraphics);
+window.heyclickyGraphics.onInteraction((enabled) => {
+  root.dataset.interactive = String(Boolean(enabled));
+});

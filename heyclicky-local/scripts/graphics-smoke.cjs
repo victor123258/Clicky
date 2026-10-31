@@ -67,10 +67,18 @@ async function main() {
       const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
       camera.position.set(0, 0, 5);
       camera.lookAt(0, 0, 0);
+      const initialRotation = scene.rotation.y;
+      canvas.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerId: 1, clientX: 10, clientY: 10 }));
+      document.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerId: 1, clientX: 40, clientY: 10 }));
+      document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, clientX: 40, clientY: 10 }));
+      const initialZoom = camera.position.length();
+      canvas.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -100 }));
+      const dragWorks = scene.rotation.y !== initialRotation;
+      const zoomWorks = camera.position.length() < initialZoom;
       renderer.render(scene, camera);
       const pixel = new Uint8Array(4);
       renderer.getContext().readPixels(32, 32, 1, 1, renderer.getContext().RGBA, renderer.getContext().UNSIGNED_BYTE, pixel);
-      parent.postMessage({ type: "heyclicky-3d-smoke", revision: THREE.REVISION, objects: scene.children.length, vertices: geometry.attributes.position.count, webgl: true, centerPixel: Array.from(pixel) }, "*");
+      parent.postMessage({ type: "heyclicky-3d-smoke", revision: THREE.REVISION, objects: scene.children.length, vertices: geometry.attributes.position.count, webgl: true, dragWorks, zoomWorks, centerPixel: Array.from(pixel) }, "*");
       renderer.dispose();
     </script>`;
 
@@ -89,12 +97,23 @@ async function main() {
     if (response?.error) throw new Error(`Isolated visual error: ${response.error}`);
     const result = response?.result;
     if (!result) throw new Error("3D payload did not execute inside the isolated graphics frame.");
-    if (!result.revision || result.objects !== 1 || result.vertices < 8 || result.webgl !== true || result.centerPixel?.[3] < 1 || !result.centerPixel?.slice(0, 3).some((channel) => channel > 0)) {
+    if (!result.revision || result.objects !== 1 || result.vertices < 8 || result.webgl !== true || result.dragWorks !== true || result.zoomWorks !== true || result.centerPixel?.[3] < 1 || !result.centerPixel?.slice(0, 3).some((channel) => channel > 0)) {
       throw new Error(`Unexpected Three.js WebGL result: ${JSON.stringify(result)}`);
     }
     const sandbox = await window.webContents.executeJavaScript("document.querySelector('#graphics-root iframe')?.getAttribute('sandbox') || ''");
     if (!sandbox.includes("allow-scripts") || sandbox.includes("allow-same-origin")) {
       throw new Error(`Graphics frame sandbox was not opaque and script-only: ${sandbox}`);
+    }
+    const pointerRouting = await window.webContents.executeJavaScript(`
+      const root = document.querySelector('#graphics-root');
+      const frame = root?.querySelector('iframe');
+      root.dataset.interactive = 'true';
+      const result = { root: getComputedStyle(root).pointerEvents, frame: getComputedStyle(frame).pointerEvents };
+      root.dataset.interactive = 'false';
+      result;
+    `);
+    if (pointerRouting.root !== "auto" || pointerRouting.frame !== "auto") {
+      throw new Error(`Interaction mode did not enable overlay pointer routing: ${JSON.stringify(pointerRouting)}`);
     }
 
     window.webContents.send("graphics:render", `<script type="module">throw new Error("expected smoke failure");</script>`);

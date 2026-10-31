@@ -21,6 +21,12 @@ contextBridge.exposeInMainWorld("heyclickyGraphics", {
     ipcRenderer.on("graphics:clear", listener);
     return () => ipcRenderer.removeListener("graphics:clear", listener);
   },
+  onInteraction(callback) {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, enabled) => callback(Boolean(enabled));
+    ipcRenderer.on("graphics:interaction", listener);
+    return () => ipcRenderer.removeListener("graphics:interaction", listener);
+  },
   reportRenderError(message) {
     const safeMessage = typeof message === "string" ? message.slice(0, 300) : "Unknown graphics error";
     ipcRenderer.send("graphics:render-error", safeMessage);
@@ -50,6 +56,13 @@ contextBridge.exposeInMainWorld("heyclickyControls", {
   clearVisual: () => ipcRenderer.send("assistant:clear"),
   quit: () => ipcRenderer.send("assistant:quit"),
   setLayout: (mode) => ipcRenderer.send("assistant:layout", mode),
+  setGraphicsInteraction: (enabled) => ipcRenderer.invoke("assistant:set-graphics-interaction", Boolean(enabled)),
+  onGraphicsInteraction(callback) {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, enabled) => callback(Boolean(enabled));
+    ipcRenderer.on("assistant:graphics-interaction-state", listener);
+    return () => ipcRenderer.removeListener("assistant:graphics-interaction-state", listener);
+  },
   onLayout(callback) {
     if (typeof callback !== "function") return () => {};
     const listener = (_event, value) => callback(value);

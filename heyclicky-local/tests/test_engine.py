@@ -52,6 +52,7 @@ class GraphicsPromptTests(unittest.TestCase):
         self.assertIn("genuine Three.js scene", prompt)
         self.assertIn("window.THREE", prompt)
         self.assertIn("readable silhouette", prompt)
+        self.assertIn("built-in drag-to-rotate and wheel-to-zoom interactions", prompt)
         self.assertIn("55–75% of the viewport", prompt)
         self.assertIn("soft key/fill/rim lighting", prompt)
         self.assertIn("WebGLRenderer({ alpha: true, antialias: true })", prompt)

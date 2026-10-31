@@ -39,12 +39,60 @@
         addEventListener("securitypolicyviolation", (event) => report("Blocked visual resource: " + event.violatedDirective));
       <\/script>`;
       const importMap = `<script type="importmap">{"imports":{"three":"data:text/javascript;base64,${data.threeBase64}"}}<\/script>`;
+      const interactionControls = `<script>
+        (() => {
+          let drag = null;
+          document.addEventListener("pointerdown", (event) => {
+            if (event.button !== 0 || !event.target?.closest?.("canvas")) return;
+            const scene = window.__heyclickyScene;
+            if (!scene) return;
+            drag = { x: event.clientX, y: event.clientY, rotationX: scene.rotation.x, rotationY: scene.rotation.y };
+            try { event.target.setPointerCapture(event.pointerId); } catch (_) { /* Synthetic events in tests have no native pointer capture. */ }
+            event.preventDefault();
+          });
+          document.addEventListener("pointermove", (event) => {
+            if (!drag) return;
+            const scene = window.__heyclickyScene;
+            if (!scene) return;
+            scene.rotation.y = drag.rotationY + (event.clientX - drag.x) * 0.01;
+            scene.rotation.x = Math.max(-1.35, Math.min(1.35, drag.rotationX + (event.clientY - drag.y) * 0.01));
+          });
+          const endDrag = () => { drag = null; };
+          document.addEventListener("pointerup", endDrag);
+          document.addEventListener("pointercancel", endDrag);
+          document.addEventListener("wheel", (event) => {
+            if (!event.target?.closest?.("canvas")) return;
+            const camera = window.__heyclickyCamera;
+            const target = window.__heyclickyCameraTarget;
+            if (!camera || !target) return;
+            const offset = camera.position.clone().sub(target);
+            const distance = Math.max(1.5, Math.min(40, offset.length() * Math.exp(event.deltaY * 0.001)));
+            camera.position.copy(target).add(offset.normalize().multiplyScalar(distance));
+            camera.lookAt(target);
+            event.preventDefault();
+          }, { passive: false });
+        })();
+      <\/script>`;
       const threeBootstrap = `<script type="module">
         import * as THREE from "three";
+        const originalSceneAdd = THREE.Scene.prototype.add;
+        THREE.Scene.prototype.add = function(...objects) {
+          window.__heyclickyScene = this;
+          return originalSceneAdd.apply(this, objects);
+        };
+        const originalCameraLookAt = THREE.Camera.prototype.lookAt;
+        THREE.Camera.prototype.lookAt = function(...args) {
+          window.__heyclickyCamera = this;
+          const target = args[0] && typeof args[0] === "object"
+            ? args[0]
+            : new THREE.Vector3(Number(args[0]) || 0, Number(args[1]) || 0, Number(args[2]) || 0);
+          window.__heyclickyCameraTarget = target.clone ? target.clone() : target;
+          return originalCameraLookAt.apply(this, args);
+        };
         window.THREE = THREE;
         parent.postMessage({ type: "heyclicky-three-ready", revision: THREE.REVISION }, "*");
       <\/script>`;
-      const markup = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}canvas{display:block}</style>${diagnostics}${importMap}${threeBootstrap}</head><body>${data.payload}</body></html>`;
+      const markup = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}canvas{display:block;touch-action:none;cursor:grab}canvas:active{cursor:grabbing}</style>${diagnostics}${interactionControls}${importMap}${threeBootstrap}</head><body>${data.payload}</body></html>`;
       document.open();
       document.write(markup);
       document.close();
