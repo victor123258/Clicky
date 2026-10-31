@@ -37,6 +37,12 @@ async function main() {
 
   try {
     await window.loadFile(path.join(__dirname, "../overlay.html"));
+    const parentScriptPolicy = await window.webContents.executeJavaScript(`
+      document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content.match(/script-src ([^;]+)/)?.[1] || ""
+    `);
+    if (parentScriptPolicy.includes("unsafe-inline") || parentScriptPolicy.includes("data:")) {
+      throw new Error(`The overlay parent CSP is too broad: ${parentScriptPolicy}`);
+    }
     await window.webContents.executeJavaScript(`
       window.__heyclickySmokeResult = null;
       window.__heyclickySmokeError = null;
@@ -86,7 +92,22 @@ async function main() {
     if (!result.revision || result.objects !== 1 || result.vertices < 8 || result.webgl !== true || result.centerPixel?.[3] < 1 || !result.centerPixel?.slice(0, 3).some((channel) => channel > 0)) {
       throw new Error(`Unexpected Three.js WebGL result: ${JSON.stringify(result)}`);
     }
-    console.log(`3D WebGL smoke passed (Three.js r${result.revision}, ${result.vertices} box vertices, center pixel ${result.centerPixel.join(",")}, isolated iframe).`);
+    const sandbox = await window.webContents.executeJavaScript("document.querySelector('#graphics-root iframe')?.getAttribute('sandbox') || ''");
+    if (!sandbox.includes("allow-scripts") || sandbox.includes("allow-same-origin")) {
+      throw new Error(`Graphics frame sandbox was not opaque and script-only: ${sandbox}`);
+    }
+
+    window.webContents.send("graphics:render", `<script type="module">throw new Error("expected smoke failure");</script>`);
+    const errorDeadline = Date.now() + 5000;
+    let renderError = null;
+    while (Date.now() < errorDeadline && !renderError) {
+      renderError = await window.webContents.executeJavaScript("window.__heyclickySmokeError");
+      if (!renderError) await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (!renderError || !renderError.includes("expected smoke failure")) {
+      throw new Error(`Generated script failure was not reported to the overlay: ${renderError || "no error message"}`);
+    }
+    console.log(`3D WebGL smoke passed (Three.js r${result.revision}, ${result.vertices} box vertices, pixel ${result.centerPixel.join(",")}); sandbox and render-error reporting verified.`);
   } finally {
     if (!window.isDestroyed()) window.destroy();
     app.quit();
