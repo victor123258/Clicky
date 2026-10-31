@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'; connect-src 'none'">
+  <!-- srcdoc frames inherit this policy. Keep only the sources needed by the sandboxed visual frame; the iframe applies a tighter per-frame CSP and opaque origin. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' data:; style-src 'self' 'unsafe-inline'; img-src data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'; connect-src 'none'">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>HeyClicky Graphics Overlay</title>
   <link rel="stylesheet" href="overlay.css">

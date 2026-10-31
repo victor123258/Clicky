@@ -34,6 +34,9 @@ jobs:
       - name: Install Node dependencies
         working-directory: heyclicky-local
         run: npm ci
+      - name: Smoke-test sandboxed Three.js graphics
+        working-directory: heyclicky-local
+        run: npm run smoke:graphics
       - name: Build one-click Windows installer
         working-directory: heyclicky-local
         shell: pwsh

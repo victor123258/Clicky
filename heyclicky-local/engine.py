@@ -333,11 +333,11 @@ def transcribe_once() -> str:
     recognizer.non_speaking_duration = 0.45
     recognizer.operation_timeout = 25
     announce_listening()
-    emit({"type": "status", "message": "Listening — speak now."})
     try:
         with sr.Microphone() as microphone:
-            log("Microphone opened; listening for one phrase.")
+            log("Microphone opened; calibrating ambient audio.")
             recognizer.adjust_for_ambient_noise(microphone, duration=0.25)
+            emit({"type": "status", "message": "Listening — speak now."})
             audio = recognizer.listen(microphone, timeout=10, phrase_time_limit=15)
     except sr.WaitTimeoutError as exc:
         raise RuntimeError("No speech heard. Check the selected microphone, then speak after ‘Listening’ appears.") from exc
@@ -361,6 +361,10 @@ def transcribe_once() -> str:
 
 def _handle_hotkey() -> None:
     try:
+        # The global shortcut is still registered during first-run setup so the
+        # local microphone test works, but a real request must never capture a
+        # screenshot unless an AI provider is configured.
+        select_provider()
         transcript = transcribe_once()
         log(f"Recognized request: {transcript}")
         emit({"type": "transcript", "text": transcript})
@@ -378,7 +382,7 @@ _REQUEST_LOCK = threading.Lock()
 
 def on_hotkey() -> None:
     if not _REQUEST_LOCK.acquire(blocking=False):
-        emit({"type": "status", "message": "A request is already being processed."})
+        emit({"type": "busy_notice", "message": "Clicky is already working on a request."})
         return
     try:
         _handle_hotkey()
@@ -388,7 +392,7 @@ def on_hotkey() -> None:
 
 def on_text_request(text: str) -> None:
     if not _REQUEST_LOCK.acquire(blocking=False):
-        emit({"type": "status", "message": "A request is already being processed."})
+        emit({"type": "request_rejected", "source": "text", "message": "Clicky is already working on another request. Your message was not sent; please retry when it is ready."})
         return
     try:
         emit({"type": "status", "message": "Thinking with your screen in context…"})

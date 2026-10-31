@@ -73,7 +73,22 @@ function renderMessages() {
 }
 function renderRecent() {
   const list = $("#recent-list");
-  if (!messages.length) return;
+  if (!messages.length) {
+    const row = document.createElement("div");
+    row.className = "empty-row";
+    const marker = document.createElement("span");
+    marker.className = "empty-icon";
+    marker.append(icon("spark"));
+    const copy = document.createElement("span");
+    const title = document.createElement("b");
+    title.textContent = "A fresh start.";
+    const detail = document.createElement("small");
+    detail.textContent = "Your conversation appears here.";
+    copy.append(title, detail);
+    row.append(marker, copy);
+    list.replaceChildren(row);
+    return;
+  }
   const latest = messages.slice(-4).reverse();
   list.replaceChildren(...latest.map((message) => {
     const row = document.createElement("div");
@@ -104,6 +119,10 @@ function showNotice(message, kind = "warning") {
 }
 function sendText() {
   if (sending) return;
+  if (lastState === "busy") {
+    showNotice("Clicky is finishing another request. Please wait, then try again.", "info");
+    return;
+  }
   const field = $("#prompt");
   const text = field.value.trim();
   if (!text) { field.focus(); return; }
@@ -119,7 +138,8 @@ function removePending() {
   const last = messages.at(-1);
   if (last?.pending) messages.pop();
   sending = false;
-  $("#send").disabled = false;
+  $("#send").disabled = lastState === "busy";
+  $("#clear-chat").disabled = lastState === "busy";
 }
 function requestVoice() {
   if (lastState === "busy") return;
@@ -173,6 +193,10 @@ $("#api-settings").addEventListener("click", () => api.openSetup());
 $("#mic-privacy").addEventListener("click", () => api.openMicrophonePrivacy());
 $("#clear-visuals").addEventListener("click", () => api.clearVisual());
 $("#clear-chat").addEventListener("click", () => {
+  if (sending || lastState === "busy") {
+    showNotice("Wait for the current request to finish before starting a new chat.", "info");
+    return;
+  }
   messages = [];
   sending = false;
   renderMessages();
@@ -192,6 +216,8 @@ api.onLayout((value) => {
 api.onStatus((value) => {
   const message = String(value?.message || "Ready");
   lastState = value?.kind === "busy" ? "busy" : "ready";
+  $("#send").disabled = sending || lastState === "busy";
+  $("#clear-chat").disabled = sending || lastState === "busy";
   $("#status").textContent = message;
   $("#notch").classList.toggle("busy", lastState === "busy");
   $("#quick-talk").classList.toggle("busy", lastState === "busy");
@@ -213,6 +239,9 @@ api.onTranscript((value) => {
   const text = String(value?.text || "").trim();
   if (text) {
     removePending();
+    sending = true;
+    $("#send").disabled = true;
+    $("#clear-chat").disabled = true;
     addMessage("user", text);
     addMessage("assistant", "Thinking…", true);
     navigate("chat");
@@ -224,6 +253,18 @@ api.onReply((value) => {
   removePending();
   addMessage("assistant", text);
   if (route === "home") showNotice("Clicky replied in your chat.", "info");
+});
+api.onRequestRejected((value) => {
+  if (sending) {
+    removePending();
+    if (messages.at(-1)?.role === "user") messages.pop();
+    renderMessages();
+    renderRecent();
+  }
+  showNotice(String(value?.message || "The request was not sent; please try again when Clicky is ready."), "warning");
+});
+api.onBusyNotice((value) => {
+  showNotice(String(value?.message || "Clicky is already working on another request."), "info");
 });
 api.onMicTest((value) => {
   const result = $("#mic-result");

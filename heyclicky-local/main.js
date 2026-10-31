@@ -18,6 +18,8 @@ let controlLayout = "collapsed";
 let collapseTimer;
 let captureRestore;
 let captureTimer;
+let overlayEnabled = true;
+let setupOverlayEnabled = null;
 let voiceLanguage = "en-US";
 const SPEECH_LANGUAGES = new Set(["en-US", "en-GB", "bn-BD", "hi-IN", "ur-PK", "es-MX", "fr-FR", "de-DE"]);
 try {
@@ -100,7 +102,9 @@ function createOverlay() {
   overlay.webContents.on("did-finish-load", () => {
     if (!overlay.isDestroyed()) overlay.webContents.send("graphics:three-module", threeModuleBase64);
   });
-  overlay.once("ready-to-show", () => overlay.showInactive());
+  overlay.once("ready-to-show", () => {
+    if (overlayEnabled) overlay.showInactive();
+  });
   overlay.on("closed", () => { overlay = null; });
 }
 
@@ -185,12 +189,14 @@ function setAssistantStatus(message, kind = "ready") {
 }
 
 function showSetup() {
-  overlay?.hide();
   setAssistantStatus("Set up API key", "warning");
   if (setupWindow && !setupWindow.isDestroyed()) {
     setupWindow.focus();
     return;
   }
+  setupOverlayEnabled = overlayEnabled;
+  overlayEnabled = false;
+  overlay?.hide();
   setupWindow = new BrowserWindow({
     width: 510,
     height: 740,
@@ -210,6 +216,12 @@ function showSetup() {
   setupWindow.loadFile(path.join(__dirname, "setup.html"));
   setupWindow.on("closed", () => {
     setupWindow = null;
+    const shouldRestoreOverlay = setupOverlayEnabled === true;
+    setupOverlayEnabled = null;
+    if (shouldRestoreOverlay && overlay && !overlay.isDestroyed() && !quitting) {
+      overlayEnabled = true;
+      overlay.showInactive();
+    }
     if (!backendStarted && !hasConfiguredKey() && !quitting) app.quit();
   });
 }
@@ -297,6 +309,10 @@ function startBackend() {
       if (controlsWindow && !controlsWindow.isDestroyed()) controlsWindow.webContents.send("assistant:reply", { text: String(message.text || "").slice(0, 6000) });
     } else if (message.type === "transcript") {
       if (controlsWindow && !controlsWindow.isDestroyed()) controlsWindow.webContents.send("assistant:transcript", { text: String(message.text || "").slice(0, 2000) });
+    } else if (message.type === "request_rejected") {
+      if (controlsWindow && !controlsWindow.isDestroyed()) controlsWindow.webContents.send("assistant:request-rejected", { message: String(message.message || "Request was not sent.").slice(0, 500) });
+    } else if (message.type === "busy_notice") {
+      if (controlsWindow && !controlsWindow.isDestroyed()) controlsWindow.webContents.send("assistant:busy-notice", { message: String(message.message || "Clicky is busy.").slice(0, 300) });
     } else if (message.type === "mic_test_result") {
       const result = { ok: Boolean(message.ok), text: String(message.text || "").slice(0, 300), error: String(message.error || "").slice(0, 500) };
       if (controlsWindow && !controlsWindow.isDestroyed()) controlsWindow.webContents.send("assistant:mic-test-result", result);
@@ -449,6 +465,7 @@ ipcMain.handle("config:save", async (event, config) => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${lines.join("\n")}\n`, { encoding: "utf8", mode: 0o600 });
   try { fs.chmodSync(file, 0o600); } catch (_) { /* Windows uses user profile ACLs. */ }
+  overlayEnabled = true;
   setupWindow.close();
   if (overlay && !overlay.isDestroyed()) overlay.showInactive();
   if (controlsWindow && !controlsWindow.isDestroyed()) controlsWindow.show();

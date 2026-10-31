@@ -47,12 +47,18 @@ class VoiceCaptureTests(unittest.TestCase):
             def __enter__(self): return self
             def __exit__(self, *args): return False
 
+        events = []
         class Recognizer:
             pause_threshold = 0
             non_speaking_duration = 0
             operation_timeout = 0
-            def adjust_for_ambient_noise(self, _microphone, duration): self.calibration = duration
-            def listen(self, _microphone, **kwargs): self.listen_args = kwargs; return "audio-bytes"
+            def adjust_for_ambient_noise(self, _microphone, duration):
+                self.calibration = duration
+                events.append("calibrated")
+            def listen(self, _microphone, **kwargs):
+                events.append("listen")
+                self.listen_args = kwargs
+                return "audio-bytes"
             def recognize_google(self, audio, language):
                 self.recognition_args = (audio, language)
                 return "  what is this window?  "
@@ -61,10 +67,15 @@ class VoiceCaptureTests(unittest.TestCase):
         fake_sr = self._speech_module(Mic(), recognizer)
         fake_tts = types.ModuleType("pyttsx3")
         fake_tts.init = lambda: (_ for _ in ()).throw(RuntimeError("SAPI driver unavailable"))
+        def record_status(message):
+            if message.get("type") == "status" and "Listening" in message.get("message", ""):
+                events.append("ready")
+
         with patch.dict(sys.modules, {"speech_recognition": fake_sr, "pyttsx3": fake_tts}), \
              patch.dict(engine.os.environ, {"HEYCLICKY_SPEECH_LANGUAGE": "bn-BD"}), \
-             patch.object(engine, "emit"):
+             patch.object(engine, "emit", side_effect=record_status):
             self.assertEqual(engine.transcribe_once(), "what is this window?")
+        self.assertEqual(events, ["calibrated", "ready", "listen"])
         self.assertEqual(recognizer.listen_args["timeout"], 10)
         self.assertEqual(recognizer.listen_args["phrase_time_limit"], 15)
         self.assertEqual(recognizer.recognition_args, ("audio-bytes", "bn-BD"))
@@ -112,6 +123,22 @@ class VoiceCaptureTests(unittest.TestCase):
             self.assertEqual(engine.capture_screen_without_clicky(), "desktop image")
         self.assertEqual([event["type"] for event in events], ["capture_request", "capture_done"])
         self.assertEqual(events[0]["id"], events[1]["id"])
+
+    def test_global_hotkey_checks_provider_before_microphone_or_screenshot(self):
+        with patch.object(engine, "select_provider", side_effect=RuntimeError("No API key found")), \
+             patch.object(engine, "transcribe_once") as transcribe, \
+             patch.object(engine, "emit") as emit:
+            engine._handle_hotkey()
+        transcribe.assert_not_called()
+        emit.assert_called_once_with({"type": "error", "message": "No API key found"})
+
+    def test_rejected_text_request_has_a_separate_ui_event(self):
+        with engine._REQUEST_LOCK, patch.object(engine, "emit") as emit:
+            engine.on_text_request("please help")
+        emit.assert_called_once()
+        event = emit.call_args.args[0]
+        self.assertEqual(event["type"], "request_rejected")
+        self.assertEqual(event["source"], "text")
 
     def test_reply_action_is_validated_and_preserved(self):
         action = engine.parse_action('{"action":"reply","text":"A concise explanation."}', (800, 600))
