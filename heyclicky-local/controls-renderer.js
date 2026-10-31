@@ -15,10 +15,19 @@ let lastState = "ready";
 let messages = [];
 let sending = false;
 let statusTimer;
+let graphicsInteractionEnabled = false;
 
 function refreshProviderStatus() {
   api.getProviderStatus().then((status) => { $("#provider-label").textContent = status; })
     .catch(() => { $("#provider-label").textContent = "Could not read provider settings."; });
+}
+function updateGraphicsInteraction(enabled) {
+  graphicsInteractionEnabled = Boolean(enabled);
+  const button = $("#graphics-interaction-toggle");
+  button.setAttribute("aria-pressed", String(graphicsInteractionEnabled));
+  button.textContent = graphicsInteractionEnabled ? "Stop interacting" : "Enable interaction";
+  $("#notch").dataset.interaction = String(graphicsInteractionEnabled);
+  $("#graphics-interaction-stop").style.display = graphicsInteractionEnabled ? "grid" : "none";
 }
 function navigate(next) {
   route = next;
@@ -190,6 +199,29 @@ $("#mic-test").addEventListener("click", () => {
   api.testMicrophone();
 });
 $("#api-settings").addEventListener("click", () => api.openSetup());
+$("#graphics-interaction-stop").addEventListener("click", async () => {
+  try {
+    updateGraphicsInteraction(await api.setGraphicsInteraction(false));
+  } catch (error) {
+    showNotice(error.message || "Could not exit 3D interaction mode.", "warning");
+  }
+});
+$("#graphics-interaction-toggle").addEventListener("click", async () => {
+  const button = $("#graphics-interaction-toggle");
+  button.disabled = true;
+  try {
+    const enabled = await api.setGraphicsInteraction(!graphicsInteractionEnabled);
+    updateGraphicsInteraction(enabled);
+    showNotice(enabled
+      ? "Interaction enabled: drag the 3D visual to rotate it. Escape restores click-through."
+      : "Interaction disabled. Click-through is restored.", "info");
+  } catch (error) {
+    showNotice(error.message || "Could not change 3D interaction mode.", "warning");
+  } finally {
+    button.disabled = false;
+  }
+});
+api.onGraphicsInteraction(updateGraphicsInteraction);
 $("#mic-privacy").addEventListener("click", () => api.openMicrophonePrivacy());
 $("#clear-visuals").addEventListener("click", () => api.clearVisual());
 $("#clear-chat").addEventListener("click", () => {

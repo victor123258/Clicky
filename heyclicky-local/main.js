@@ -1,6 +1,6 @@
 "use strict";
 
-const { app, BrowserWindow, dialog, ipcMain, protocol, screen, shell } = require("electron");
+const { app, BrowserWindow, dialog, globalShortcut, ipcMain, protocol, screen, shell } = require("electron");
 const { registerGraphicsScheme, registerGraphicsProtocol } = require("./graphics-protocol.cjs");
 registerGraphicsScheme(protocol);
 const { spawn } = require("node:child_process");
@@ -21,6 +21,7 @@ let collapseTimer;
 let captureRestore;
 let captureTimer;
 let overlayEnabled = true;
+let graphicsInteractive = false;
 let setupOverlayEnabled = null;
 let voiceLanguage = "en-US";
 const SPEECH_LANGUAGES = new Set(["en-US", "en-GB", "bn-BD", "hi-IN", "ur-PK", "es-MX", "fr-FR", "de-DE"]);
@@ -100,12 +101,36 @@ function createOverlay() {
   overlay.setIgnoreMouseEvents(true, { forward: true });
   overlay.loadFile(path.join(__dirname, "overlay.html"));
   overlay.webContents.on("did-finish-load", () => {
-    if (!overlay.isDestroyed()) overlay.webContents.send("graphics:three-module", threeModuleBase64);
+    if (!overlay.isDestroyed()) {
+      overlay.webContents.send("graphics:three-module", threeModuleBase64);
+      overlay.webContents.send("graphics:interaction", graphicsInteractive);
+    }
   });
   overlay.once("ready-to-show", () => {
     if (overlayEnabled) overlay.showInactive();
   });
   overlay.on("closed", () => { overlay = null; });
+}
+
+function setGraphicsInteraction(enabled) {
+  graphicsInteractive = Boolean(enabled);
+  if (overlay && !overlay.isDestroyed()) {
+    overlay.setIgnoreMouseEvents(!graphicsInteractive, { forward: !graphicsInteractive });
+    overlay.webContents.send("graphics:interaction", graphicsInteractive);
+  }
+  if (controlsWindow && !controlsWindow.isDestroyed()) {
+    controlsWindow.webContents.send("assistant:graphics-interaction-state", graphicsInteractive);
+  }
+  if (graphicsInteractive) {
+    if (controlsWindow && !controlsWindow.isDestroyed()) setControlLayout("collapsed");
+    const registered = globalShortcut.register("Esc", () => setGraphicsInteraction(false));
+    if (!registered) console.warn("Could not register Escape to exit 3D interaction mode.");
+    setAssistantStatus("3D interaction on — drag to rotate; Escape exits", "info");
+  } else {
+    globalShortcut.unregister("Esc");
+    setAssistantStatus("3D interaction off — click-through restored", "info");
+  }
+  return graphicsInteractive;
 }
 
 function controlBounds(mode = controlLayout) {
@@ -165,6 +190,7 @@ function createControls() {
     controlsWindow.showInactive();
     controlsWindow.webContents.send("assistant:status", lastStatus);
     controlsWindow.webContents.send("assistant:layout-state", { mode: controlLayout });
+    controlsWindow.webContents.send("assistant:graphics-interaction-state", graphicsInteractive);
   });
   controlsWindow.on("mouseenter", () => {
     if (controlLayout === "collapsed") setControlLayout("peek");
@@ -189,6 +215,7 @@ function setAssistantStatus(message, kind = "ready") {
 }
 
 function showSetup() {
+  if (graphicsInteractive) setGraphicsInteraction(false);
   setAssistantStatus("Set up API key", "warning");
   if (setupWindow && !setupWindow.isDestroyed()) {
     setupWindow.focus();
@@ -387,6 +414,11 @@ ipcMain.on("assistant:layout", (event, mode) => {
   if (controlsWindow && event.sender.id === controlsWindow.webContents.id) setControlLayout(mode, mode === "expanded");
 });
 
+ipcMain.handle("assistant:set-graphics-interaction", (event, enabled) => {
+  if (!controlsWindow || event.sender.id !== controlsWindow.webContents.id || typeof enabled !== "boolean") return graphicsInteractive;
+  return setGraphicsInteraction(enabled);
+});
+
 ipcMain.on("assistant:setup", (event) => {
   if (controlsWindow && event.sender.id === controlsWindow.webContents.id) showSetup();
 });
@@ -500,6 +532,7 @@ app.whenReady().then(() => {
 
 app.on("before-quit", () => {
   quitting = true;
+  globalShortcut.unregisterAll();
   if (backend && !backend.killed) backend.kill("SIGTERM");
 });
 app.on("window-all-closed", () => {
