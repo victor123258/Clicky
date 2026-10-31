@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'; connect-src 'none'">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>HeyClicky Controls</title>
+  <link rel="stylesheet" href="controls.css">
+  <script src="controls-renderer.js" defer></script>
+</head>
+<body>
+  <main class="notch" aria-label="HeyClicky controls">
+    <div class="brand"><span class="spark">✳</span><div class="brand-copy"><b>CLICKY</b><small>DESKTOP AI</small></div></div>
+    <span class="separator"></span>
+    <button class="listen" id="listen" type="button" title="Start voice request"><span class="mic">●</span><span class="listen-label">Ask Clicky</span></button>
+    <span class="status" id="status" aria-live="polite"><i></i><span>Starting</span></span>
+    <span class="spacer"></span>
+    <button class="icon" id="clear" type="button" title="Clear graphics" aria-label="Clear graphics">⌫</button>
+    <button class="icon quit" id="quit" type="button" title="Quit HeyClicky" aria-label="Quit HeyClicky">×</button>
+  </main>
+</body>
+</html>

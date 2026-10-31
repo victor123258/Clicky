@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import queue
 import re
 import sys
 import threading
@@ -195,16 +196,37 @@ def plan_action(command: str, screenshot: Image.Image) -> Action:
     return action
 
 
+COMMAND_QUEUE: queue.Queue[dict[str, Any]] = queue.Queue()
+
+
+def read_electron_commands() -> None:
+    """Consume Electron's JSONL command channel without blocking approvals."""
+    for line in sys.stdin:
+        try:
+            message = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(message, dict):
+            continue
+        kind = message.get("type")
+        if kind == "approval":
+            COMMAND_QUEUE.put(message)
+        elif kind == "voice_request":
+            threading.Thread(target=on_hotkey, daemon=True).start()
+        elif kind == "clear_visual":
+            emit({"type": "clear_visual"})
+            emit({"type": "status", "message": "Graphics cleared."})
+        elif kind == "shutdown":
+            emit({"type": "shutdown"})
+            return
+
+
 def wait_for_approval(action: Action) -> bool:
     emit({"type": "action_confirmation", "action": action.name, "x": action.x, "y": action.y, "text": action.text})
-    line = sys.stdin.readline()
-    if not line:
-        return False
-    try:
-        message = json.loads(line)
-    except json.JSONDecodeError:
-        return False
-    return isinstance(message, dict) and message.get("type") == "approval" and message.get("approved") is True
+    while True:
+        message = COMMAND_QUEUE.get()
+        if message.get("type") == "approval":
+            return message.get("approved") is True
 
 
 def process_request(command: str) -> None:
@@ -239,6 +261,7 @@ def _handle_hotkey() -> None:
     try:
         import pyttsx3
         import speech_recognition as sr
+        emit({"type": "status", "message": "Listening…"})
         speaker = pyttsx3.init()
         speaker.say("Listening...")
         speaker.runAndWait()
@@ -250,6 +273,7 @@ def _handle_hotkey() -> None:
             audio = recognizer.listen(microphone, timeout=8, phrase_time_limit=12)
         transcript = recognizer.recognize_google(audio)
         log(f"Recognized request: {transcript}")
+        emit({"type": "status", "message": "Thinking…"})
         process_request(transcript)
     except Exception as exc:
         if pyautogui is not None and isinstance(exc, pyautogui.FailSafeException):
@@ -294,6 +318,7 @@ def main() -> None:
         emit({"type": "error", "message": str(exc)})
         raise SystemExit(1)
     emit({"type": "status", "message": f"Ready. Provider: {provider}, model: {model}. Press Ctrl+Shift+Space."})
+    threading.Thread(target=read_electron_commands, daemon=True).start()
     keyboard.add_hotkey("ctrl+shift+space", on_hotkey, suppress=False)
     keyboard.add_hotkey("ctrl+shift+esc", lambda: emit({"type": "shutdown"}), suppress=False)
     try:
