@@ -24,18 +24,24 @@ async function main() {
     }
   });
 
+  window.webContents.on("console-message", (...args) => {
+    const details = args.at(-1);
+    const message = details && typeof details === "object" ? details.message : args[2];
+    if (message) console.log(`[overlay console] ${message}`);
+  });
+
   try {
     await window.loadFile(path.join(__dirname, "../overlay.html"));
-    const resultPromise = window.webContents.executeJavaScript(`
-      new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error("3D payload did not execute inside the isolated graphics frame.")), 10000);
-        window.addEventListener("message", function onMessage(event) {
-          if (event.data?.type !== "heyclicky-3d-smoke") return;
-          clearTimeout(timer);
-          resolve(event.data);
-        });
-      })
+    // Wait for this evaluation so the receiver is installed before sending IPC;
+    // otherwise a fast renderer can deliver the result before the test is listening.
+    await window.webContents.executeJavaScript(`
+      window.__heyclickySmokeResult = null;
+      window.addEventListener("message", (event) => {
+        if (event.data?.type === "heyclicky-3d-smoke") window.__heyclickySmokeResult = event.data;
+      });
+      true
     `);
+
     const payload = `<script type="module">
       const scene = new THREE.Scene();
       const geometry = new THREE.BoxGeometry(1, 1, 1);
@@ -46,7 +52,14 @@ async function main() {
 
     window.webContents.send("graphics:three-module", threeBase64);
     window.webContents.send("graphics:render", payload);
-    const result = await resultPromise;
+
+    const deadline = Date.now() + 10000;
+    let result = null;
+    while (Date.now() < deadline && !result) {
+      result = await window.webContents.executeJavaScript("window.__heyclickySmokeResult");
+      if (!result) await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (!result) throw new Error("3D payload did not execute inside the isolated graphics frame.");
     if (!result.revision || result.objects !== 1 || result.vertices < 8) {
       throw new Error(`Unexpected Three.js scene result: ${JSON.stringify(result)}`);
     }
