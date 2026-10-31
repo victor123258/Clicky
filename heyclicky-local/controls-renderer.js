@@ -1,15 +1,19 @@
 "use strict";
 
 const status = document.querySelector("#status");
+const statusLabel = status.querySelector(".status-label");
 const listen = document.querySelector("#listen");
-let busy = false;
+const listenLabel = listen.querySelector(".speak-label");
 
 function setStatus(message, kind = "ready") {
-  status.querySelector("span").textContent = message;
-  status.className = `status ${kind}`;
-  busy = kind === "busy";
-  listen.disabled = busy;
-  listen.classList.toggle("busy", busy);
+  const safeMessage = String(message || "Ready");
+  statusLabel.textContent = safeMessage;
+  status.title = safeMessage;
+  status.className = `status-block ${kind}`;
+  listen.disabled = kind === "busy";
+  listen.classList.toggle("busy", kind === "busy");
+  listen.setAttribute("aria-busy", kind === "busy" ? "true" : "false");
+  listenLabel.textContent = kind === "busy" && /listen/i.test(safeMessage) ? "Listening…" : "Speak to Clicky";
 }
 
 listen.addEventListener("click", () => {
@@ -19,7 +23,7 @@ listen.addEventListener("click", () => {
 document.querySelector("#clear").addEventListener("click", () => window.heyclickyControls.clearVisual());
 document.querySelector("#quit").addEventListener("click", () => window.heyclickyControls.quit());
 window.heyclickyControls.onStatus((value) => {
-  const text = typeof value?.message === "string" ? value.message : "Ready";
+  const message = typeof value?.message === "string" ? value.message : "Ready";
   const kind = value?.kind === "busy" ? "busy" : value?.kind === "warning" ? "warning" : "ready";
-  setStatus(text, kind);
+  setStatus(message, kind);
 });
