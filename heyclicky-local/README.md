@@ -1,20 +1,24 @@
 # HeyClicky for Windows
 
-HeyClicky is a native Electron desktop assistant with a bundled Python backend and isolated graphics overlay. It does not use Ollama or other local LLMs.
+HeyClicky is a native Electron desktop assistant with a Python speech/vision backend and a separate, isolated graphics overlay. It does not use Ollama or other local LLMs.
 
 ## One-click installer
 
 The Windows installer is built by the repository workflow at `../.github/workflows/windows-installer.yml`.
 
-- Run the workflow manually to get a downloadable installer artifact under the workflow's **Artifacts** section.
-- Push a version tag such as `v1.0.0` to publish the installer as a GitHub Release asset.
-- The installer is configured as a per-user, one-click NSIS install and launches the app after installation.
+- Pushes to `main` trigger a Windows installer build and GitHub release upload.
+- The per-user NSIS installer bundles Electron, Three.js, and a PyInstaller-built Python backend. End users do not need Node.js or Python installed.
+- On first launch, choose Gemini or OpenRouter and enter your own API key. Getting a key requires an account with the selected provider. Windows may show SmartScreen warnings because this project does not include a paid code-signing certificate.
 
-The installer bundles Electron, Three.js, and a PyInstaller-built Python backend, so end users do not need Node.js or Python installed. The first launch opens a setup window for one Gemini or OpenRouter API key; obtaining that key still requires an account with the selected provider. Windows may show SmartScreen warnings because this project does not include a paid code-signing certificate.
+## Use
+
+The top-center notch is the app's home: hover for a quick peek, click to open Home, Chat, or Settings, and collapse it when you want it out of the way. Ask a typed question in Chat or tap the microphone / press **Ctrl+Shift+Space** to speak. Voice input waits for a phrase and transcribes it with SpeechRecognition's Google Web Speech service; no text-to-speech engine is required for capture. The app hides its notch and graphics overlay while taking a screenshot so Clicky does not become its own screen context. Click/type desktop actions require confirmation in a native dialog and wait 0.5 seconds before execution. Move the pointer to a screen corner to activate PyAutoGUI's emergency failsafe. Press **Ctrl+Shift+Esc** to exit.
+
+In **Settings → Test microphone**, run a local capture/transcription test without an AI key or AI request. The onboarding window also offers the same test before connecting a key. Audio is still sent to Google's speech service for transcription. If the test fails, use its error details, check Windows **Settings → Privacy & security → Microphone** (including desktop-app access), confirm a default input device is selected, and check your internet connection. Speech recognition defaults to English (US), with selectable English (UK), Bengali (Bangladesh), Hindi, Urdu, Spanish (Mexico), French, and German in Settings. The chosen language is saved locally and applies to the global shortcut and the microphone test.
 
 ## Build locally on Windows
 
-Requirements: Windows x64, Node.js 22+, Python 3.12+, and audio input support.
+Requirements: Windows x64, Node.js 22+, Python 3.12+, and a working microphone/audio input.
 
 ```powershell
 cd heyclicky-local
@@ -22,14 +26,10 @@ npm ci
 npm run build:win
 ```
 
-The installer appears in `release/`. `npm start` runs the development app from source instead. The bundled engine build uses PyInstaller and the runtime dependencies in `requirements.txt`.
-
-## First run and use
-
-The first-run wizard stores the selected provider key in the current user's HeyClicky application-data folder. Click **Ask Clicky** in the visible top-center notch, or press **Ctrl+Shift+Space**, then speak one short request. The assistant announces “Listening...”, transcribes one bounded phrase through SpeechRecognition's Google Web Speech service, captures the desktop, and requests one action from Gemini or OpenRouter. Click/type actions require confirmation in a native dialog and wait 0.5 seconds before execution. Move the pointer to a screen corner to activate PyAutoGUI's emergency failsafe. Press **Ctrl+Shift+Esc** to exit.
+The installer appears in `release/`. `npm start` runs the development app from source instead. The bundled engine uses PyInstaller and runtime dependencies from `requirements.txt`.
 
 ## Privacy and security
 
-Screenshots and voice transcripts are sent to the configured cloud providers. Google's speech-recognition wrapper also sends microphone audio to Google. Provider free tiers, quotas, signup requirements, and prices can change; the project cannot guarantee those services remain free. Do not automate credentials, payments, destructive operations, security settings, or sensitive screens.
+Screenshots and prompts are sent to the configured Gemini or OpenRouter endpoint. Google's speech-recognition service receives microphone audio for transcription. Provider free tiers, quotas, signup requirements, and prices can change; this project cannot guarantee those services remain free. The microphone test does not use the AI provider, but it does send captured audio to Google's transcription service. Do not automate credentials, payments, destructive operations, security settings, or sensitive screens.
 
-A visible floating notch/pill sits at the top center with Ask Clicky, status, Clear graphics, and Quit controls. The graphics surface itself is transparent, frameless, always-on-top, and click-through. Model-generated HTML/SVG/Three.js runs in an opaque-origin sandboxed iframe with no network, same-origin access, or Electron bridge. Graphics scripts are still untrusted and may consume CPU/GPU resources; payload size is capped. The app does not claim that generated scripts are risk-free.
+The graphics surface is transparent, frameless, always-on-top, and click-through. Model-generated HTML/SVG/Three.js runs in an opaque-origin sandboxed iframe with no network access, same-origin access, or Electron bridge. Graphics scripts are untrusted and may consume CPU/GPU resources; payload size is capped. The app does not claim that generated scripts are risk-free.

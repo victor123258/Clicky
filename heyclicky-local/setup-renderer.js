@@ -27,6 +27,21 @@ document.getElementById("toggle-key").addEventListener("click", (event) => {
   event.currentTarget.textContent = input.type === "password" ? "Show" : "Hide";
 });
 
+const micButton = document.getElementById("setup-mic-test");
+const micResult = document.getElementById("setup-mic-result");
+micButton.addEventListener("click", () => {
+  micButton.disabled = true;
+  micResult.textContent = "Opening microphone…";
+  window.heyclickySetup.testMicrophone();
+});
+window.heyclickySetup.onMicrophoneTest((result) => {
+  micButton.disabled = false;
+  micResult.textContent = result?.ok
+    ? `Heard: “${String(result.text || "").slice(0, 80)}”`
+    : String(result?.error || "Microphone test failed.");
+  micResult.style.color = result?.ok ? "#bde99a" : "#ffb0a7";
+});
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   error.textContent = "";

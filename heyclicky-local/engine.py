@@ -32,8 +32,9 @@ SYSTEM_PROMPT = '''You are a cautious desktop assistant. Inspect the screenshot 
 {"action":"type","text":"Hello World"}
 {"action":"render_visual","html_payload":"<svg xmlns=\\\"http://www.w3.org/2000/svg\\\" viewBox=\\\"0 0 800 600\\\"><circle cx=\\\"400\\\" cy=\\\"300\\\" r=\\\"80\\\" fill=\\\"#38bdf8\\\"/></svg>"}
 {"action":"clear_visual"}
+{"action":"reply","text":"A concise, helpful answer grounded in the screenshot and request."}
 {"action":"none"}
-Coordinates are integer pixels within the screenshot. Click/type actions require explicit user confirmation. Never request secrets, passwords, payment details, destructive actions, or security changes. If uncertain, use none.
+Coordinates are integer pixels within the screenshot. Click/type actions require explicit user confirmation. Use reply for questions or explanations; use none only when no useful response is safe. Never request secrets, passwords, payment details, destructive actions, or security changes.
 For a graphic, return a self-contained HTML or SVG fragment. If using Three.js, use the trusted global THREE supplied by the isolated overlay and put code in a module script; do not import external URLs. The visual runs in an opaque-origin sandboxed iframe without network access, Electron privileges, or access to the parent page. Avoid huge loops or excessive resources. Never include credentials or attempt to access the host outside the graphics sandbox.'''
 
 
@@ -119,6 +120,11 @@ def parse_action(raw: str, image_size: tuple[int, int]) -> Action:
         return Action("render_visual", html_payload=markup)
     if name == "clear_visual":
         return Action("clear_visual")
+    if name == "reply":
+        value = payload.get("text")
+        if not isinstance(value, str) or not value.strip() or len(value) > 6000:
+            raise ValueError("Reply must contain 1–6,000 characters")
+        return Action("reply", text=value.strip())
     if name == "none":
         return Action("none")
     raise ValueError(f"Unsupported model action: {name!r}")
@@ -209,10 +215,16 @@ def read_electron_commands() -> None:
         if not isinstance(message, dict):
             continue
         kind = message.get("type")
-        if kind == "approval":
+        if kind in {"approval", "capture_ready"}:
             COMMAND_QUEUE.put(message)
         elif kind == "voice_request":
             threading.Thread(target=on_hotkey, daemon=True).start()
+        elif kind == "text_request":
+            text = message.get("text")
+            if isinstance(text, str) and text.strip():
+                threading.Thread(target=on_text_request, args=(text[:2000],), daemon=True).start()
+        elif kind == "mic_test":
+            threading.Thread(target=on_mic_test, daemon=True).start()
         elif kind == "clear_visual":
             emit({"type": "clear_visual"})
             emit({"type": "status", "message": "Graphics cleared."})
@@ -229,21 +241,50 @@ def wait_for_approval(action: Action) -> bool:
             return message.get("approved") is True
 
 
+def capture_screen_without_clicky() -> Image.Image:
+    """Hide the native UI before capture so the model sees the user's desktop, not Clicky."""
+    import uuid
+    capture_id = uuid.uuid4().hex
+    emit({"type": "capture_request", "id": capture_id})
+    deadline = time.monotonic() + 10
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Screen capture could not hide the Clicky overlay. Please try again.")
+        try:
+            message = COMMAND_QUEUE.get(timeout=remaining)
+        except queue.Empty as exc:
+            raise TimeoutError("Timed out while preparing a screen capture. Please try again.") from exc
+        if message.get("type") == "capture_ready" and message.get("id") == capture_id:
+            break
+    try:
+        return pyautogui.screenshot()
+    finally:
+        emit({"type": "capture_done", "id": capture_id})
+
+
 def process_request(command: str) -> None:
     if pyautogui is None:
         raise RuntimeError("PyAutoGUI is unavailable; install requirements.txt")
     pyautogui.FAILSAFE = True
-    screenshot = pyautogui.screenshot()
+    screenshot = capture_screen_without_clicky()
     action = plan_action(command, screenshot)
-    if action.name == "none":
-        emit({"type": "status", "message": "No safe action proposed."})
+    if action.name == "reply":
+        emit({"type": "assistant_reply", "text": action.text})
+        emit({"type": "status", "message": "Ready when you are."})
+    elif action.name == "none":
+        emit({"type": "assistant_reply", "text": "I couldn’t find a safe, useful next step from that request. You can rephrase it or ask me to explain what’s on screen."})
+        emit({"type": "status", "message": "Ready when you are."})
     elif action.name == "clear_visual":
         emit({"type": "clear_visual"})
+        emit({"type": "assistant_reply", "text": "I cleared the visual from your desktop."})
         emit({"type": "status", "message": "Graphics overlay cleared."})
     elif action.name == "render_visual":
         emit({"type": "render_visual", "html_payload": action.html_payload})
+        emit({"type": "assistant_reply", "text": "Here’s the visual. It’s running in the isolated graphics overlay."})
         emit({"type": "status", "message": "Isolated graphics payload sent to Electron overlay."})
     elif not wait_for_approval(action):
+        emit({"type": "assistant_reply", "text": "No changes made — the desktop action was cancelled."})
         emit({"type": "status", "message": "Desktop action cancelled."})
     else:
         # Give the user a brief final opportunity to move the pointer to a corner.
@@ -251,29 +292,79 @@ def process_request(command: str) -> None:
         pyautogui.FAILSAFE = True
         if action.name == "click":
             pyautogui.click(action.x, action.y)
+            emit({"type": "assistant_reply", "text": f"Done — I clicked at ({action.x}, {action.y})."})
             emit({"type": "status", "message": f"Clicked at ({action.x}, {action.y})."})
         elif action.name == "type":
             pyautogui.write(action.text, interval=0.02)
+            emit({"type": "assistant_reply", "text": "Done — I typed the requested text."})
             emit({"type": "status", "message": "Typed the requested text."})
+
+
+def announce_listening() -> None:
+    """Give a best-effort spoken cue, but never let a TTS driver block the mic."""
+    finished = threading.Event()
+
+    def speak() -> None:
+        try:
+            import pyttsx3
+            speaker = pyttsx3.init()
+            speaker.say("Listening")
+            speaker.runAndWait()
+            speaker.stop()
+        except Exception as exc:
+            log(f"Optional voice cue unavailable; continuing with microphone capture: {exc}")
+        finally:
+            finished.set()
+
+    threading.Thread(target=speak, name="optional-voice-cue", daemon=True).start()
+    if not finished.wait(timeout=1.5):
+        log("Optional voice cue timed out; continuing with microphone capture.")
+
+
+def transcribe_once() -> str:
+    """Capture one phrase and transcribe it; speech output is best-effort only."""
+    try:
+        import speech_recognition as sr
+    except ImportError as exc:
+        raise RuntimeError("SpeechRecognition is missing. Reinstall HeyClicky so the voice components are included.") from exc
+
+    recognizer = sr.Recognizer()
+    recognizer.pause_threshold = 0.8
+    recognizer.non_speaking_duration = 0.45
+    recognizer.operation_timeout = 25
+    announce_listening()
+    emit({"type": "status", "message": "Listening — speak now."})
+    try:
+        with sr.Microphone() as microphone:
+            log("Microphone opened; listening for one phrase.")
+            recognizer.adjust_for_ambient_noise(microphone, duration=0.25)
+            audio = recognizer.listen(microphone, timeout=10, phrase_time_limit=15)
+    except sr.WaitTimeoutError as exc:
+        raise RuntimeError("No speech heard. Check the selected microphone, then speak after ‘Listening’ appears.") from exc
+    except (OSError, AttributeError) as exc:
+        raise RuntimeError(f"Could not open the microphone ({exc}). Check Windows Settings → Privacy & security → Microphone, allow desktop apps, and set a default input device.") from exc
+    except Exception as exc:
+        if "pyaudio" in str(exc).lower() or "audio" in str(exc).lower():
+            raise RuntimeError(f"The microphone audio driver could not start ({exc}). Check Windows microphone privacy access and the default input device.") from exc
+        raise
+
+    try:
+        transcript = recognizer.recognize_google(audio, language=os.getenv("HEYCLICKY_SPEECH_LANGUAGE", "en-US"))
+    except sr.UnknownValueError as exc:
+        raise RuntimeError("I didn’t catch that. Move closer to the microphone and try again.") from exc
+    except sr.RequestError as exc:
+        raise RuntimeError(f"Google speech transcription failed: {exc}. Check your internet connection and try the microphone test again.") from exc
+    if not transcript or not transcript.strip():
+        raise RuntimeError("No speech was recognized. Try again and speak a little closer to your microphone.")
+    return transcript.strip()
 
 
 def _handle_hotkey() -> None:
     try:
-        import pyttsx3
-        import speech_recognition as sr
-        emit({"type": "status", "message": "Listening…"})
-        speaker = pyttsx3.init()
-        speaker.say("Listening...")
-        speaker.runAndWait()
-        speaker.stop()
-        recognizer = sr.Recognizer()
-        with sr.Microphone() as microphone:
-            log("Listening for one short request...")
-            recognizer.adjust_for_ambient_noise(microphone, duration=0.2)
-            audio = recognizer.listen(microphone, timeout=8, phrase_time_limit=12)
-        transcript = recognizer.recognize_google(audio)
+        transcript = transcribe_once()
         log(f"Recognized request: {transcript}")
-        emit({"type": "status", "message": "Thinking…"})
+        emit({"type": "transcript", "text": transcript})
+        emit({"type": "status", "message": "Thinking with your screen in context…"})
         process_request(transcript)
     except Exception as exc:
         if pyautogui is not None and isinstance(exc, pyautogui.FailSafeException):
@@ -291,6 +382,38 @@ def on_hotkey() -> None:
         return
     try:
         _handle_hotkey()
+    finally:
+        _REQUEST_LOCK.release()
+
+
+def on_text_request(text: str) -> None:
+    if not _REQUEST_LOCK.acquire(blocking=False):
+        emit({"type": "status", "message": "A request is already being processed."})
+        return
+    try:
+        emit({"type": "status", "message": "Thinking with your screen in context…"})
+        process_request(text)
+    except Exception as exc:
+        if pyautogui is not None and isinstance(exc, pyautogui.FailSafeException):
+            emit({"type": "failsafe", "message": "PyAutoGUI emergency failsafe activated."})
+            raise SystemExit(2)
+        emit({"type": "error", "message": str(exc)[:500]})
+    finally:
+        _REQUEST_LOCK.release()
+
+
+def on_mic_test() -> None:
+    if not _REQUEST_LOCK.acquire(blocking=False):
+        emit({"type": "mic_test_result", "ok": False, "error": "Another request is already using the microphone. Wait for it to finish and try again."})
+        return
+    try:
+        text = transcribe_once()
+        emit({"type": "mic_test_result", "ok": True, "text": text})
+        emit({"type": "status", "message": "Microphone test passed."})
+    except Exception as exc:
+        error = str(exc)[:500]
+        emit({"type": "mic_test_result", "ok": False, "error": error})
+        emit({"type": "error", "message": error})
     finally:
         _REQUEST_LOCK.release()
 
@@ -314,10 +437,11 @@ def main() -> None:
         raise SystemExit(1)
     try:
         provider, _key, model = select_provider()
-    except RuntimeError as exc:
-        emit({"type": "error", "message": str(exc)})
-        raise SystemExit(1)
-    emit({"type": "status", "message": f"Ready. Provider: {provider}, model: {model}. Press Ctrl+Shift+Space."})
+        startup_status = f"Ready. Provider: {provider}, model: {model}. Press Ctrl+Shift+Space."
+    except RuntimeError:
+        # The no-key microphone test is useful during first-run setup.
+        startup_status = "Voice test ready. Connect a provider key to use screen context."
+    emit({"type": "status", "message": startup_status})
     threading.Thread(target=read_electron_commands, daemon=True).start()
     keyboard.add_hotkey("ctrl+shift+space", on_hotkey, suppress=False)
     keyboard.add_hotkey("ctrl+shift+esc", lambda: emit({"type": "shutdown"}), suppress=False)
