@@ -32,6 +32,20 @@ sys.modules[spec.name] = engine
 spec.loader.exec_module(engine)
 
 
+class ProviderSelectionTests(unittest.TestCase):
+    def test_openrouter_uses_free_model_even_when_paid_override_is_set(self):
+        with patch.dict(engine.os.environ, {
+            "AI_PROVIDER": "openrouter",
+            "OPENROUTER_API_KEY": "test-openrouter-key",
+            "GEMINI_API_KEY": "test-gemini-key",
+            "OPENROUTER_MODEL": "some/paid-model",
+        }, clear=True):
+            self.assertEqual(
+                engine.select_provider(),
+                ("openrouter", "test-openrouter-key", "openrouter/free"),
+            )
+
+
 class GraphicsPromptTests(unittest.TestCase):
     def test_3d_guidance_requires_real_high_quality_transparent_three_scene(self):
         prompt = engine.SYSTEM_PROMPT

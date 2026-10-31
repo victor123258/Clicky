@@ -38,12 +38,13 @@
         addEventListener("unhandledrejection", (event) => report(event.reason?.message || event.reason || "Graphics promise rejected"));
         addEventListener("securitypolicyviolation", (event) => report("Blocked visual resource: " + event.violatedDirective));
       <\/script>`;
+      const importMap = `<script type="importmap">{"imports":{"three":"data:text/javascript;base64,${data.threeBase64}"}}<\/script>`;
       const threeBootstrap = `<script type="module">
-        import * as THREE from "data:text/javascript;base64,${data.threeBase64}";
+        import * as THREE from "three";
         window.THREE = THREE;
         parent.postMessage({ type: "heyclicky-three-ready", revision: THREE.REVISION }, "*");
       <\/script>`;
-      const markup = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}canvas{display:block}</style>${diagnostics}</head><body>${threeBootstrap}${data.payload}</body></html>`;
+      const markup = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}canvas{display:block}</style>${diagnostics}${importMap}${threeBootstrap}</head><body>${data.payload}</body></html>`;
       document.open();
       document.write(markup);
       document.close();

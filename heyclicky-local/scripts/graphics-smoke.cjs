@@ -54,7 +54,7 @@ async function main() {
     `);
 
     const payload = `<script type="module">
-      const THREE = window.THREE;
+      import * as THREE from "three";
       const scene = new THREE.Scene();
       const geometry = new THREE.BoxGeometry(2, 2, 2);
       const material = new THREE.MeshBasicMaterial({ color: 0x33aaff });

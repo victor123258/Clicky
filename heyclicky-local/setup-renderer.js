@@ -15,7 +15,7 @@ for (const tab of document.querySelectorAll(".tab")) {
     label.textContent = provider === "gemini" ? "Gemini API key" : "OpenRouter API key";
     help.textContent = provider === "gemini"
       ? "Get a key at aistudio.google.com. Gemini is selected by default when both providers are configured."
-      : "Get a key at openrouter.ai/keys. The default model is google/gemini-2.5-flash:free.";
+      : "Get a key at openrouter.ai/keys. HeyClicky uses OpenRouter’s free model router (openrouter/free); available models and quotas can change.";
     input.value = "";
     input.placeholder = provider === "gemini" ? "Paste Gemini key" : "Paste OpenRouter key";
     error.textContent = "";
